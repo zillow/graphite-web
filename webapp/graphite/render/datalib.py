@@ -17,6 +17,8 @@ from graphite.storage import STORE
 from graphite.readers import FetchInProgress
 from django.conf import settings
 from graphite.util import epoch
+from graphite.carbonlink import CarbonLink
+import time
 
 from traceback import format_exc
 
@@ -198,7 +200,9 @@ def fetchData(requestContext, pathExpr):
   retries = 1 # start counting at one to make log output and settings more readable
   while True:
     try:
-      seriesList = _fetchData(pathExpr,startTime, endTime, requestContext, seriesList)
+      seriesList = _fetchData(pathExpr, startTime, endTime, requestContext, seriesList)
+      # extend seriesList for new metric query
+      seriesList = _extend_for_new_metrics(seriesList, pathExpr, startTime, endTime)
       return seriesList
     except Exception, e:
       if retries >= settings.MAX_FETCH_RETRIES:
@@ -217,3 +221,99 @@ def nonempty(series):
       return True
 
   return False
+
+
+def _extend_for_new_metrics(seriesList, pathExpr, startTime, endTime):
+  ################################################################################
+  ################################################################################
+  # Search for Carbon-cache in case for some metrics that has not been flushed yet
+
+  # If the series.name has alread existed in seriesList, then do nothing
+  # else extend the data in cache to seriesList.
+
+  # Only do this if step == lowest
+  # 1. Get infos from archive
+  #    based on time range to determine step
+  # 2. Only query cache if step == min(archive['secondsPerPoints'])
+  # 3. preprocess the pathExpr to be real metric path, then use
+  #    carbonlink to query MemCache
+  # 4. Edge case: pathExpr has wildcard (Ignored it for now)
+  #    For now, let's just support specific individual metric query
+
+  # Add a function like
+  # extend_for_new_metrics(seriesList, pathExpr)
+
+  clean_patterns = pathExpr.replace('\\', '')
+  has_wildcard = clean_patterns.find('{') > -1 or clean_patterns.find('[') > -1 or clean_patterns.find('*') > -1 or clean_patterns.find('?') > -1
+  if not has_wildcard:
+    # Check archives (archive['secondsPerPoints'])
+    # Required: retention configurations
+    # Load STORAGE_SCHEMAS_CONFIG or add API for that
+    metric = clean_patterns
+    schema = CarbonLink.get_storage_schema(metric)
+    archives = schema["archives"]
+    # Get lowest step
+    lowest_step = min([arch[0] for arch in archives])
+
+    now = int(time.time())
+    max_retention = max([arch[0] * arch[1] for arch in archives])
+
+    oldestTime = now - max_retention
+
+    # Some checks
+    if endTime is None:
+      endTime = now
+    if startTime is None:
+      return seriesList
+
+    fromTime = int(startTime)
+    untilTime = int(endTime)
+
+    # Compare with now
+    if fromTime > now:
+      return seriesList
+    if untilTime > now:
+      untilTime = now
+
+    # Compare with oldestTime
+    if fromTime < oldestTime:
+      fromTime = oldestTime
+    if untilTime < oldestTime:
+      return seriesList
+
+    diff = now - fromTime
+    # sorted_archives = sorted(archives, key=lambda x: x[0] * x[1])
+
+    target_arch = None
+    for archive in archives:
+      retention = archive[0] * archive[1]
+      if retention >= diff:
+        target_arch = archive
+        break
+    step = target_arch[0]
+    # Only check carbon-cache if step == lowest_step
+    if step == lowest_step:
+      cachedResults = CarbonLink.query(metric)
+      if cachedResults:
+        fromInterval = int(fromTime - (fromTime % step)) + step
+        untilInterval = int(untilTime - (untilTime % step)) + step
+        if fromInterval == untilInterval:
+          untilInterval += step
+        seriesDict = {series.name: series for series in seriesList}
+        # if metric in seriesDict, then do nothing
+        if metric in seriesDict:
+          return seriesList
+        # This is new metric!
+        points = (untilInterval - fromInterval) // step
+        values = [None] * points
+        for (timestamp, value) in cachedResults:
+          interval = int(timestamp - (timestamp % step))
+          i = (interval - fromInterval) / step
+          if i < 0 or i >= points:
+            continue
+          values[i] = value
+        newSeries = TimeSeries(metric, fromInterval, untilInterval, step, values)
+        seriesDict[metric] = newSeries
+        seriesList = [seriesDict[k] for k in sorted(seriesDict)]
+
+  return seriesList
