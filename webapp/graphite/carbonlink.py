@@ -97,6 +97,12 @@ class CarbonLinkPool:
     log.cache("CarbonLink get-metadata request received for %s:%s" % (metric, key))
     return results['value']
 
+  def get_storage_schema(self, metric):
+    request = dict(type='get-storageschema', metric=metric)
+    results = self.send_request(request)
+    log.cache("CarbonLink get-storageschema request for %s returned %s schema" % (metric, results['name']))
+    return results
+
   def set_metadata(self, metric, key, value):
     request = dict(type='set-metadata', metric=metric, key=key, value=value)
     results = self.send_request(request)
