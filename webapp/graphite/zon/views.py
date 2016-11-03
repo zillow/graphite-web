@@ -15,7 +15,7 @@ def full_path_zon_test(request):
 
 	# 3. Query graphite
 	try:
-		res = urlopen("http://localhost:8080/render/?format=json&target=test.fullstack.yun&from=-1min")
+		res = urlopen("http://localhost:31509/render/?format=json&target=test.fullstack.yun&from=-1min")
 		s = res.read().decode('utf-8')
 		json_obj = json.loads(s)
 	except Exception:
