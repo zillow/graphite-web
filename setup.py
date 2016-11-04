@@ -90,6 +90,7 @@ try:
         'graphite.version',
         'graphite.whitelist',
         'graphite.zon',
+        'graphite.cache_metrics',
       ],
       package_data={'graphite' :
         ['templates/*', 'local_settings.py.example']},
