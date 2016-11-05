@@ -11,7 +11,7 @@ def full_path_zon_test(request):
 	random_data = _send_random_data()
 
 	# 2. Wait (allow some latency)
-	time.sleep(0.030)
+	time.sleep(1)
 
 	# 3. Query graphite
 	try:
@@ -23,7 +23,7 @@ def full_path_zon_test(request):
 
 	# 4. Check Result
 	result = ""
-	details = ""
+	details = "Expected value: {0}".format(random_data)
 	if not json_obj:
 		result = "fail"
 		details = "graphite query response is empty"
