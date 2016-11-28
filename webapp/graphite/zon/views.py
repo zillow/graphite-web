@@ -7,15 +7,22 @@ import random
 
 
 def full_path_zon_test(request):
+	# 0. Parse parameters
+	queryParams = request.GET.copy()
+	queryParams.update(request.POST)
+	# TODO: remove the default values, the default values are what we are using currently
+	port = queryParams.get('port','31509')
+	metric_name = queryParams.get('metric', 'test.fullstack.yun')
+
 	# 1. Send data to graphite
-	random_data = _send_random_data()
+	random_data = _send_random_data(metric_name)
 
 	# 2. Wait (allow some latency)
 	time.sleep(1)
 
 	# 3. Query graphite
 	try:
-		res = urlopen("http://localhost:31509/render/?format=json&target=test.fullstack.yun&from=-1min&noCache")
+		res = urlopen("http://localhost:{0}/render/?format=json&target={1}&from=-1min&noCache".format(port, metric_name))
 		s = res.read().decode('utf-8')
 		json_obj = json.loads(s)
 	except Exception:
@@ -53,11 +60,11 @@ def full_path_zon_test(request):
 	# 5. Response
 	result_json_obj = {"result": result, "details": details}
 	response = HttpResponse(content=json.dumps(result_json_obj),
-                                content_type='application/json')
+                            content_type='application/json')
 	return response
 
 
-def _send_random_data():
+def _send_random_data(metric_name):
 	data = random.randint(0, 9)
-	subprocess.call("echo \"test.fullstack.yun {0} `date +%s`\" | nc localhost 2003".format(data), shell=True)
+	subprocess.call("echo \"{0} {1} `date +%s`\" | nc localhost 2003".format(metric_name, data), shell=True)
 	return data

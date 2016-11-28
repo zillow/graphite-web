@@ -12,5 +12,5 @@ def cache_metric(request):
 		"datapoints": datapoints
 	}
 	response = HttpResponse(content=json.dumps(result_json_obj),
-                                content_type='application/json')
+                            content_type='application/json')
 	return response
