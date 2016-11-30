@@ -245,7 +245,10 @@ def _extend_for_new_metrics(seriesList, pathExpr, startTime, endTime):
 
   clean_patterns = pathExpr.replace('\\', '')
   has_wildcard = clean_patterns.find('{') > -1 or clean_patterns.find('[') > -1 or clean_patterns.find('*') > -1 or clean_patterns.find('?') > -1
-  if not has_wildcard:
+
+  # 1) CarbonLink has some hosts
+  # 2) has no wildcard
+  if CarbonLink.hosts and not has_wildcard:
     # Check archives (archive['secondsPerPoints'])
     # Required: retention configurations
     # Load STORAGE_SCHEMAS_CONFIG or add API for that
