@@ -21,11 +21,16 @@ def get_finder(finder_path):
 
 
 class Store:
-  def __init__(self, finders=None, hosts=None):
+  def __init__(self, finders=None, carbon_cache_finder=None, hosts=None):
     if finders is None:
       finders = [get_finder(finder_path)
                  for finder_path in settings.STORAGE_FINDERS]
     self.finders = finders
+
+    if carbon_cache_finder is None:
+      carbon_cache_finder = get_finder(settings.CARBON_CACHE_FINDER)
+
+    self.carbon_cache_finder = carbon_cache_finder
 
     if hosts is None:
       hosts = settings.CLUSTER_SERVERS
@@ -62,6 +67,10 @@ class Store:
         nodes_by_path[node.path] = []
 
       nodes_by_path[node.path].append(node)
+
+    # Search Carbon Cache if nodes_by_path is empty
+    if not nodes_by_path:
+      return self.carbon_cache_finder(query)
 
     # Reduce matching nodes for each path to a minimal set
     found_branch_nodes = set()

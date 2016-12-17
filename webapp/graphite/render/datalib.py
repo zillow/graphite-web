@@ -202,7 +202,7 @@ def fetchData(requestContext, pathExpr):
     try:
       seriesList = _fetchData(pathExpr, startTime, endTime, requestContext, seriesList)
       # extend seriesList for new metric query
-      seriesList = _extend_for_new_metrics(seriesList, pathExpr, startTime, endTime)
+      # seriesList = _extend_for_new_metrics(seriesList, pathExpr, startTime, endTime)
       return seriesList
     except Exception, e:
       if retries >= settings.MAX_FETCH_RETRIES:

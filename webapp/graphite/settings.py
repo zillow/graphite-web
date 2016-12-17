@@ -93,6 +93,7 @@ RRD_CF = 'AVERAGE'
 STORAGE_FINDERS = (
     'graphite.finders.standard.StandardFinder',
 )
+CARBON_CACHE_FINDER = 'graphite.finders.standard.CarbonCacheFinder'
 MIDDLEWARE_CLASSES=''
 MAX_TAG_LENGTH = 50
 AUTO_REFRESH_INTERVAL = 60

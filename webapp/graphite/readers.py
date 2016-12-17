@@ -188,6 +188,86 @@ class WhisperReader(object):
     return time_info, values
 
 
+class CarbonCacheReader(object):
+  __slots__ = ('metric')
+  supported = True
+
+  def __init__(self, metric):
+    self.metric = metric
+
+  def get_intervals(self):
+    # intervals doesn't matter in such type of reader
+    # Let's return time.time()
+    start = time.time()
+    end = start
+    return IntervalSet( [Interval(start, end)] )
+
+  def fetch(self, startTime, endTime):
+    # Fetch data from carbon cache through CarbonLink
+    schema = CarbonLink.get_storage_schema(self.metric)
+    archives = schema["archives"]
+    # Get lowest step
+    lowest_step = min([arch[0] for arch in archives])
+
+    now = int(time.time())
+    max_retention = max([arch[0] * arch[1] for arch in archives])
+    oldestTime = now - max_retention
+
+    # Some checks
+    if endTime is None:
+      endTime = now
+    if startTime is None:
+      return None
+
+    fromTime = int(startTime)
+    untilTime = int(endTime)
+
+    # Compare with now
+    if fromTime > now:
+      return None
+    if untilTime > now:
+      untilTime = now
+
+    # Compare with oldestTime
+    if fromTime < oldestTime:
+      fromTime = oldestTime
+    if untilTime < oldestTime:
+      return None
+
+    diff = now - fromTime
+    # sorted_archives = sorted(archives, key=lambda x: x[0] * x[1])
+
+    target_arch = None
+    for archive in archives:
+      retention = archive[0] * archive[1]
+      if retention >= diff:
+        target_arch = archive
+        break
+    if not target_arch:
+      return None
+    step = target_arch[0]
+
+    # Only check carbon-cache if step == lowest_step
+    if step == lowest_step:
+      cachedResults = CarbonLink.query(metric)
+      if cachedResults:
+        fromInterval = int(fromTime - (fromTime % step)) + step
+        untilInterval = int(untilTime - (untilTime % step)) + step
+        if fromInterval == untilInterval:
+          untilInterval += step
+        points = (untilInterval - fromInterval) // step
+        values = [None] * points
+        time_info = (fromInterval, untilInterval, step)
+        for (timestamp, value) in cachedResults:
+          interval = int(timestamp - (timestamp % step))
+          i = (interval - fromInterval) / step
+          if i < 0 or i >= points:
+            continue
+          values[i] = value
+        return time_info, values
+    return None
+
+
 class GzippedWhisperReader(WhisperReader):
   supported = bool(whisper and gzip)
 
