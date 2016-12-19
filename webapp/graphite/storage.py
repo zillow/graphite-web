@@ -70,7 +70,9 @@ class Store:
 
     # Search Carbon Cache if nodes_by_path is empty
     if not nodes_by_path:
-      yield self.carbon_cache_finder.find_nodes(query)
+      for leaf_node in self.carbon_cache_finder.find_nodes(query):
+        # it only exists one value
+        yield leaf_node
 
     # Reduce matching nodes for each path to a minimal set
     found_branch_nodes = set()
