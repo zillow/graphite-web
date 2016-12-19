@@ -249,7 +249,7 @@ class CarbonCacheReader(object):
 
     # Only check carbon-cache if step == lowest_step
     if step == lowest_step:
-      cachedResults = CarbonLink.query(metric)
+      cachedResults = CarbonLink.query(self.metric)
       if cachedResults:
         fromInterval = int(fromTime - (fromTime % step)) + step
         untilInterval = int(untilTime - (untilTime % step)) + step
