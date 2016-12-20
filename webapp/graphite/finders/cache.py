@@ -21,7 +21,8 @@ class CarbonCacheFinder:
         if CarbonLink.hosts and not has_wildcard:
             metric = clean_patterns
             datapoints = CarbonLink.query(metric)
-            fake_metric_path = metric
-            # TODO: check any info we need put into reader here
-            reader = CarbonCacheReader(metric)
-            yield LeafNode(fake_metric_path, reader)
+            if datapoints:
+                fake_metric_path = metric
+                # TODO: check any info we need put into reader here
+                reader = CarbonCacheReader(metric)
+                yield LeafNode(fake_metric_path, read
