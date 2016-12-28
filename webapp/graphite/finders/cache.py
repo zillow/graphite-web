@@ -25,4 +25,4 @@ class CarbonCacheFinder:
                 fake_metric_path = metric
                 # TODO: check any info we need put into reader here
                 reader = CarbonCacheReader(metric)
-                yield LeafNode(fake_metric_path, read)
+                yield LeafNode(fake_metric_path, reader)
