@@ -86,7 +86,7 @@ class Store:
     # 3) query data starting from 3 hours ago.
     # in such case, previous carbon_cache_finder will not return any node
     # because carbon-cache doesn't have enough data. However, if we reach
-    # this point, that means we should all we have in carbon cache.
+    # this point, that means we should return all we have in carbon cache.
     if not nodes_by_path:
       query.startTime = None
       for leaf_node in self.carbon_cache_finder.find_nodes(query):
