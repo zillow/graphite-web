@@ -91,6 +91,12 @@ class CarbonLinkPool:
     log.cache("CarbonLink cache-query request for %s returned %d datapoints" % (metric, len(results['datapoints'])))
     return results['datapoints']
 
+  def precheck(self, metric, timestamp=None):
+    request = dict(type='cache-query-precheck', metric=metric, timestamp=timestamp)
+    results = self.send_request(request)
+    log.cache("CarbonLink cache-query-precheck request for %s" % (metric))
+    return results["exists"]
+
   def get_metadata(self, metric, key):
     request = dict(type='get-metadata', metric=metric, key=key)
     results = self.send_request(request)

@@ -6,7 +6,7 @@ from graphite.readers import CarbonCacheReader
 
 class CarbonCacheFinder:
     """
-    Designed to find any new metric that only exists in carbon cache, and create
+    Designed to find any metric that exists in carbon cache, and create
     a node if exists.
     """
     def __init__(self):
@@ -20,9 +20,9 @@ class CarbonCacheFinder:
         # 2) has no wildcard
         if CarbonLink.hosts and not has_wildcard:
             metric = clean_patterns
-            datapoints = CarbonLink.query(metric)
-            if datapoints:
+            exists = CarbonLink.precheck(metric, query.startTime)
+            if exists:
                 fake_metric_path = metric
-                # TODO: check any info we need put into reader here
+                # TODO: check any info we need to put into reader @here
                 reader = CarbonCacheReader(metric)
                 yield LeafNode(fake_metric_path, reader)
