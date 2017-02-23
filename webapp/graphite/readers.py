@@ -202,41 +202,38 @@ class CarbonCacheReader(object):
     end = start
     return IntervalSet( [Interval(start, end)] )
 
-  def fetch(self, startTime, endTime):
-    # Fetch data from carbon cache through CarbonLink
-    schema = CarbonLink.get_storage_schema(self.metric)
-    archives = schema["archives"]
-    # Get lowest step
-    lowest_step = min([arch[0] for arch in archives])
-
+  def _format_and_extract_time(self, start_time, end_time, max_retention):
+    """
+    This function is design for formatting and extracting from
+    and until time.
+    """
     now = int(time.time())
-    max_retention = max([arch[0] * arch[1] for arch in archives])
-    oldestTime = now - max_retention
+    oldest_time = now - max_retention
 
     # Some checks
-    if endTime is None:
-      endTime = now
-    if startTime is None:
+    if end_time is None:
+      end_time = now
+    if start_time is None:
       return None
 
-    fromTime = int(startTime)
-    untilTime = int(endTime)
+    from_time = int(start_time)
+    until_time = int(end_time)
 
     # Compare with now
-    if fromTime > now:
+    if from_time > now:
       return None
-    if untilTime > now:
-      untilTime = now
+    if until_time > now:
+      until_time = now
 
-    # Compare with oldestTime
-    if fromTime < oldestTime:
-      fromTime = oldestTime
-    if untilTime < oldestTime:
+    # Compare with oldest_time
+    if from_time < oldest_time:
+      from_time = oldest_time
+    if until_time < oldest_time:
       return None
 
-    diff = now - fromTime
-    # sorted_archives = sorted(archives, key=lambda x: x[0] * x[1])
+    return (from_time, until_time)
 
+  def _calculate_step(self, archives, diff):
     target_arch = None
     for archive in archives:
       retention = archive[0] * archive[1]
@@ -246,25 +243,53 @@ class CarbonCacheReader(object):
     if not target_arch:
       return None
     step = target_arch[0]
+    return step    
+
+  def _query_and_format_cache_data(self, from_time, until_time, step):
+    cached_results = CarbonLink.query(self.metric)
+    if cached_results:
+      from_interval = int(from_time - (from_time % step)) + step
+      until_interval = int(until_time - (until_time % step)) + step
+      if from_interval == until_interval:
+        until_interval += step
+      points = (until_interval - from_interval) // step
+      values = [None] * points
+      time_info = (from_interval, until_interval, step)
+      for (timestamp, value) in cached_results:
+        interval = int(timestamp - (timestamp % step))
+        index = (interval - from_interval) / step
+        if index < 0 or index >= points:
+          continue
+        values[index] = value
+      return time_info, values
+
+  def fetch(self, start_time, end_time):
+    # Fetch data from carbon cache through CarbonLink
+    schema = CarbonLink.get_storage_schema(self.metric)
+    archives = schema["archives"]
+    # Get lowest step
+    lowest_step = min([arch[0] for arch in archives])
+
+    now = int(time.time())
+    max_retention = max([arch[0] * arch[1] for arch in archives])
+    oldest_time = now - max_retention
+
+    # format and extract from/until time
+    from_and_until_time = self._format_and_extract_time(start_time, end_time, max_retention)
+    if not from_and_until_time:
+      return None
+    from_time, until_time = from_and_until_time
+
+    # calcucate step
+    diff = now - from_time
+    # sorted_archives = sorted(archives, key=lambda x: x[0] * x[1])
+    step = self._calculate_step(archives, diff)
+    if not step:
+      return None
 
     # Only check carbon-cache if step == lowest_step
     if step == lowest_step:
-      cachedResults = CarbonLink.query(self.metric)
-      if cachedResults:
-        fromInterval = int(fromTime - (fromTime % step)) + step
-        untilInterval = int(untilTime - (untilTime % step)) + step
-        if fromInterval == untilInterval:
-          untilInterval += step
-        points = (untilInterval - fromInterval) // step
-        values = [None] * points
-        time_info = (fromInterval, untilInterval, step)
-        for (timestamp, value) in cachedResults:
-          interval = int(timestamp - (timestamp % step))
-          i = (interval - fromInterval) / step
-          if i < 0 or i >= points:
-            continue
-          values[i] = value
-        return time_info, values
+      return self._query_and_format_cache_data(from_time, until_time, step)
     return None
 
 

@@ -22,7 +22,7 @@ class CarbonCacheFinder:
             metric = clean_patterns
             exists = CarbonLink.precheck(metric, query.startTime)
             if exists:
-                fake_metric_path = metric
+                metric_path = metric
                 # TODO: check any info we need to put into reader @here
                 reader = CarbonCacheReader(metric)
-                yield LeafNode(fake_metric_path, reader)
+                yield LeafNode(metric_path, reader)

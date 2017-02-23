@@ -123,7 +123,7 @@ class CarbonLinkPool:
     result = {}
     result.setdefault('datapoints', [])
 
-    if metric.startswith(settings.CARBON_METRIC_PREFIX) and (request['type'] not in ['get-storageschema', 'cache-query-precheck']):
+    if self._is_all_request(request):
       return self.send_request_to_all(request)
 
     if not self.hosts:
@@ -146,6 +146,9 @@ class CarbonLinkPool:
         raise CarbonLinkRequestError(result['error'])
       log.cache("CarbonLink finished receiving %s from %s" % (str(metric), str(host)))
     return result
+
+  def _is_all_request(self, request):
+    return request['metric'].startswith(settings.CARBON_METRIC_PREFIX) and (request['type'] not in ['get-storageschema', 'cache-query-precheck'])
 
   def send_request_to_all(self, request):
     metric = request['metric']
