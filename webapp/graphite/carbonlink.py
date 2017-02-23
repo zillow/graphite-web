@@ -123,7 +123,7 @@ class CarbonLinkPool:
     result = {}
     result.setdefault('datapoints', [])
 
-    if metric.startswith(settings.CARBON_METRIC_PREFIX) and request['type'] != 'get-storageschema':
+    if metric.startswith(settings.CARBON_METRIC_PREFIX) and (request['type'] not in ['get-storageschema', 'cache-query-precheck']):
       return self.send_request_to_all(request)
 
     if not self.hosts:
