@@ -7,7 +7,7 @@ import ConfigParser
 
 from glob import glob
 from collections import defaultdict
-from pkg_resources import find_packages
+from setuptools import find_packages
 
 try:
     from io import BytesIO
