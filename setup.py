@@ -77,7 +77,7 @@ try:
       license='Apache Software License 2.0',
       description='Enterprise scalable realtime graphing',
       package_dir={'' : 'webapp'},
-      packages=find_packages(),
+      packages=find_packages(where='webapp'),
       package_data={'graphite' :
         ['templates/*', 'local_settings.py.example']},
       scripts=glob('bin/*'),
