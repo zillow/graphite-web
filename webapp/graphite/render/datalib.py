@@ -17,6 +17,8 @@ from graphite.storage import STORE
 from graphite.readers import FetchInProgress
 from django.conf import settings
 from graphite.util import epoch
+from graphite.carbonlink import CarbonLink
+import time
 
 from traceback import format_exc
 
@@ -198,7 +200,7 @@ def fetchData(requestContext, pathExpr):
   retries = 1 # start counting at one to make log output and settings more readable
   while True:
     try:
-      seriesList = _fetchData(pathExpr,startTime, endTime, requestContext, seriesList)
+      seriesList = _fetchData(pathExpr, startTime, endTime, requestContext, seriesList)
       return seriesList
     except Exception, e:
       if retries >= settings.MAX_FETCH_RETRIES:

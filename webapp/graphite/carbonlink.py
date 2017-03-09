@@ -91,11 +91,23 @@ class CarbonLinkPool:
     log.cache("CarbonLink cache-query request for %s returned %d datapoints" % (metric, len(results['datapoints'])))
     return results['datapoints']
 
+  def precheck(self, metric, timestamp=None):
+    request = dict(type='cache-query-precheck', metric=metric, timestamp=timestamp)
+    results = self.send_request(request)
+    log.cache("CarbonLink cache-query-precheck request for %s" % (metric))
+    return results["exists"]
+
   def get_metadata(self, metric, key):
     request = dict(type='get-metadata', metric=metric, key=key)
     results = self.send_request(request)
     log.cache("CarbonLink get-metadata request received for %s:%s" % (metric, key))
     return results['value']
+
+  def get_storage_schema(self, metric):
+    request = dict(type='get-storageschema', metric=metric)
+    results = self.send_request(request)
+    log.cache("CarbonLink get-storageschema request for %s returned %s schema" % (metric, results['name']))
+    return results
 
   def set_metadata(self, metric, key, value):
     request = dict(type='set-metadata', metric=metric, key=key, value=value)
@@ -111,7 +123,7 @@ class CarbonLinkPool:
     result = {}
     result.setdefault('datapoints', [])
 
-    if metric.startswith(settings.CARBON_METRIC_PREFIX):
+    if self._is_all_request(request):
       return self.send_request_to_all(request)
 
     if not self.hosts:
@@ -134,6 +146,9 @@ class CarbonLinkPool:
         raise CarbonLinkRequestError(result['error'])
       log.cache("CarbonLink finished receiving %s from %s" % (str(metric), str(host)))
     return result
+
+  def _is_all_request(self, request):
+    return request['metric'].startswith(settings.CARBON_METRIC_PREFIX) and (request['type'] not in ['get-storageschema', 'cache-query-precheck'])
 
   def send_request_to_all(self, request):
     metric = request['metric']

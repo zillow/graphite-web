@@ -7,6 +7,7 @@ import ConfigParser
 
 from glob import glob
 from collections import defaultdict
+from setuptools import find_packages
 
 try:
     from io import BytesIO
@@ -76,20 +77,7 @@ try:
       license='Apache Software License 2.0',
       description='Enterprise scalable realtime graphing',
       package_dir={'' : 'webapp'},
-      packages=[
-        'graphite',
-        'graphite.account',
-        'graphite.browser',
-        'graphite.composer',
-        'graphite.dashboard',
-        'graphite.events',
-        'graphite.finders',
-        'graphite.metrics',
-        'graphite.render',
-        'graphite.url_shortener',
-        'graphite.version',
-        'graphite.whitelist',
-      ],
+      packages=find_packages(where='webapp'),
       package_data={'graphite' :
         ['templates/*', 'local_settings.py.example']},
       scripts=glob('bin/*'),

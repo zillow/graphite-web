@@ -21,11 +21,16 @@ def get_finder(finder_path):
 
 
 class Store:
-  def __init__(self, finders=None, hosts=None):
+  def __init__(self, finders=None, carbon_cache_finder=None, hosts=None):
     if finders is None:
       finders = [get_finder(finder_path)
                  for finder_path in settings.STORAGE_FINDERS]
     self.finders = finders
+
+    if carbon_cache_finder is None:
+      carbon_cache_finder = get_finder(settings.CARBON_CACHE_FINDER)
+
+    self.carbon_cache_finder = carbon_cache_finder
 
     if hosts is None:
       hosts = settings.CLUSTER_SERVERS
@@ -41,6 +46,15 @@ class Store:
       remote_requests = [ r.find(query) for r in self.remote_stores if r.available ]
 
     matching_nodes = set()
+
+    # single metric query, let's hit carbon-cache first,
+    # if we can fetch all data from carbon-cache, then
+    # DO NOT hit disk. It helps us reduce iowait.
+    # Please use the right version of carbon-cache.
+    # For wildcard query, carbon-cache returns None certainly...
+    for leaf_node in self.carbon_cache_finder.find_nodes(query):
+      yield leaf_node
+      return
 
     # Search locally
     for finder in self.finders:
@@ -62,6 +76,23 @@ class Store:
         nodes_by_path[node.path] = []
 
       nodes_by_path[node.path].append(node)
+
+    # Search Carbon Cache if nodes_by_path is empty
+    #
+    # We have this block of code here, because i wanna cover
+    # an edge case.
+    # 1) metric: carbon.foo
+    # 2) carbon-cache includes 2 hours data for carbon.foo
+    # 3) query data starting from 3 hours ago.
+    # in such case, previous carbon_cache_finder will not return any node
+    # because carbon-cache doesn't have enough data. However, if we reach
+    # this point, that means we should return all we have in carbon cache.
+    if not nodes_by_path:
+      query.startTime = None
+      for leaf_node in self.carbon_cache_finder.find_nodes(query):
+        # it only exists one value
+        yield leaf_node
+        return
 
     # Reduce matching nodes for each path to a minimal set
     found_branch_nodes = set()
