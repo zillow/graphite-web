@@ -2,16 +2,18 @@ from datetime import datetime
 import json
 import os
 import time
+import math
 import logging
 import shutil
 
 from graphite.render.hashing import ConsistentHashRing, hashRequest, hashData
+from graphite.render.evaluator import extractPathExpressions
 import whisper
 
 from django.conf import settings
 from django.core.urlresolvers import reverse
 from django.http import HttpRequest, QueryDict
-from django.test import TestCase
+from .base import TestCase
 
 # Silence logging during tests
 LOGGER = logging.getLogger()
@@ -55,6 +57,14 @@ class RenderTest(TestCase):
         except OSError:
             pass
 
+    def test_render_evaluator(self):
+        test_input = ['somefunc(my.metri[cz].{one,two})=123', 'target1,target2']
+        expected_output = ['my.metri[cz].{one,two}', 'target1']
+        outputs = extractPathExpressions(test_input)
+
+        self.assertTrue(all(output in expected_output for output in outputs))
+        self.assertTrue(all(output in outputs for output in expected_output))
+
     def test_render_view(self):
         url = reverse('graphite.render.views.renderView')
 
@@ -90,43 +100,67 @@ class RenderTest(TestCase):
         whisper.create(self.db, [(1, 60)])
 
         ts = int(time.time())
-        whisper.update(self.db, 0.1234567890123456789012, ts - 2)
-        whisper.update(self.db, 0.4, ts - 1)
-        whisper.update(self.db, 0.6, ts)
+        whisper.update(self.db, 0.1234567890123456789012, ts - 5)
+        whisper.update(self.db, 0.4, ts - 4)
+        whisper.update(self.db, 0.6, ts - 3)
+        whisper.update(self.db, float('inf'), ts - 2)
+        whisper.update(self.db, float('-inf'), ts - 1)
+        whisper.update(self.db, float('nan'), ts)
 
         response = self.client.get(url, {'target': 'test', 'format': 'raw'})
         raw_data = ("None,None,None,None,None,None,None,None,None,None,None,"
                     "None,None,None,None,None,None,None,None,None,None,None,"
                     "None,None,None,None,None,None,None,None,None,None,None,"
                     "None,None,None,None,None,None,None,None,None,None,None,"
-                    "None,None,None,None,None,None,None,None,None,None,None,"
-                    "None,None,0.12345678901234568,0.4,0.6")
+                    "None,None,None,None,None,None,None,None,None,None,"
+                    "0.12345678901234568,0.4,0.6,inf,-inf,nan")
         raw_response = "test,%d,%d,1|%s\n" % (ts-59, ts+1, raw_data)
         self.assertEqual(response.content, raw_response)
 
         response = self.client.get(url, {'target': 'test', 'format': 'json'})
+        self.assertIn('[1e9999, ' + str(ts - 2) + ']', response.content)
+        self.assertIn('[-1e9999, ' + str(ts - 1) + ']', response.content)
+        self.assertIn('[null, ' + str(ts) + ']', response.content)
         data = json.loads(response.content)
-        end = data[0]['datapoints'][-4:]
+        end = data[0]['datapoints'][-7:]
         self.assertEqual(
-            end, [[None, ts - 3], [0.12345678901234568, ts - 2], [0.4, ts - 1], [0.6, ts]])
+            end, [[None, ts - 6],
+                  [0.12345678901234568, ts - 5],
+                  [0.4, ts - 4],
+                  [0.6, ts - 3],
+                  [float('inf'), ts - 2],
+                  [float('-inf'), ts - 1],
+                  [None, ts]])
 
         response = self.client.get(url, {'target': 'test', 'format': 'dygraph'})
+        self.assertIn('[' + str((ts - 2) * 1000) + ', Infinity]', response.content)
+        self.assertIn('[' + str((ts - 1) * 1000) + ', -Infinity]', response.content)
         data = json.loads(response.content)
-        end = data['data'][-4:]
+        end = data['data'][-7:]
         self.assertEqual(end,
-            [[(ts - 3) * 1000, None],
-            [(ts - 2) * 1000, 0.123456789012],
-            [(ts - 1) * 1000, 0.4],
-            [ts * 1000, 0.6]])
+            [[(ts - 6) * 1000, None],
+            [(ts - 5) * 1000, 0.123456789012],
+            [(ts - 4) * 1000, 0.4],
+            [(ts - 3) * 1000, 0.6],
+            [(ts - 2) * 1000, float('inf')],
+            [(ts - 1) * 1000, float('-inf')],
+            [ts * 1000, None]])
 
         response = self.client.get(url, {'target': 'test', 'format': 'rickshaw'})
         data = json.loads(response.content)
-        end = data[0]['datapoints'][-4:]
+        end = data[0]['datapoints'][-7:-1]
         self.assertEqual(end,
-            [{'x': ts - 3, 'y': None},
-            {'x': ts - 2, 'y': 0.12345678901234568},
-            {'x': ts - 1, 'y': 0.4},
-            {'x': ts, 'y': 0.6}])
+            [{'x': ts - 6, 'y': None},
+            {'x': ts - 5, 'y': 0.12345678901234568},
+            {'x': ts - 4, 'y': 0.4},
+            {'x': ts - 3, 'y': 0.6},
+            {'x': ts - 2, 'y': float('inf')},
+            {'x': ts - 1, 'y': float('-inf')}])
+
+        last = data[0]['datapoints'][-1]
+        self.assertEqual(last['x'], ts)
+        self.assertTrue(math.isnan(last['y']))
+
 
     def test_hash_request(self):
         # Requests with the same parameters should hash to the same values,

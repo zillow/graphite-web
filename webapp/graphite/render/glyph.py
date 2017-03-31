@@ -727,7 +727,7 @@ class Graph:
       numberOfLines = max(len(elements) - numRight, numRight)
       columns = math.floor(columns / 2.0)
       if columns < 1: columns = 1
-      legendHeight = max(1, (numberOfLines / columns)) * (lineHeight + padding)
+      legendHeight = (max(1, (numberOfLines / columns)) * lineHeight) + padding
       self.area['ymax'] -= legendHeight #scoot the drawing area up to fit the legend
       self.ctx.set_line_width(1.0)
       x = self.area['xmin']
@@ -768,7 +768,7 @@ class Graph:
       columns = math.floor( self.width / labelWidth )
       if columns < 1: columns = 1
       numberOfLines = math.ceil( float(len(elements)) / columns )
-      legendHeight = numberOfLines * (lineHeight + padding)
+      legendHeight = (numberOfLines * lineHeight) + padding
       self.area['ymax'] -= legendHeight #scoot the drawing area up to fit the legend
       self.ctx.set_line_width(1.0)
       x = self.area['xmin']
@@ -1046,11 +1046,11 @@ class LineGraph(Graph):
     self.setColor( self.foregroundColor )
 
     if params.get('title'):
-      self.drawTitle( unicode(params['title']) )
+      self.drawTitle( unicode( unquote_plus(params['title']) ) )
     if params.get('vtitle'):
-      self.drawVTitle( unicode(params['vtitle']) )
+      self.drawVTitle( unicode( unquote_plus(params['vtitle']) ) )
     if self.secondYAxis and params.get('vtitleRight'):
-      self.drawVTitle( unicode(params['vtitleRight']), rightAlign=True )
+      self.drawVTitle( unicode( unquote_plus(params['vtitleRight']) ), rightAlign=True )
     self.setFont()
 
     if not params.get('hideLegend', len(self.data) > settings.LEGEND_MAX_ITEMS):
@@ -1792,7 +1792,7 @@ class PieGraph(Graph):
     self.setFont( size=titleSize )
     self.setColor( self.foregroundColor )
     if params.get('title'):
-      self.drawTitle( params['title'] )
+      self.drawTitle( unquote_plus(params['title']) )
     self.setFont()
 
     if not params.get('hideLegend',False):

@@ -25,6 +25,7 @@ from graphite.logger import log
 from graphite.render.attime import parseTimeOffset, parseATTime
 from graphite.events import models
 from graphite.util import epoch, timestamp, deltaseconds
+from graphite.render.grammar import grammar
 
 # XXX format_units() should go somewhere else
 if environ.get('READTHEDOCS'):
@@ -65,7 +66,7 @@ def safePow(a, b):
   if b is None: return None
   try:
     result = math.pow(a, b)
-  except ValueError:
+  except:
     return None
   return result
 
@@ -755,6 +756,88 @@ def weightedAverage(requestContext, seriesListAvg, seriesListWeight, *nodes):
   resultSeries.pathExpression = name
   return [resultSeries]
 
+def exponentialMovingAverage(requestContext, seriesList, windowSize):
+  """
+  Takes a series of values and a window size and produces an exponential moving
+  average utilizing the following formula:
+
+    ema(current) = constant * (Current Value) + (1 - constant) * ema(previous)
+
+    The Constant is calculated as:
+
+        constant = 2 / (windowSize + 1)
+
+    The first period EMA uses a simple moving average for its value.
+
+  Example:
+
+  .. code-block:: none
+
+    &target=exponentialMovingAverage(*.transactions.count, 10)
+    &target=exponentialMovingAverage(*.transactions.count, '-10s')
+
+  """
+  # EMA = C * (current_value) + (1 - C) + EMA
+  # C = 2 / (windowSize + 1)
+
+  # The following was copied from movingAverage, and altered for ema
+  if not seriesList:
+    return []
+  windowInterval = None
+  if isinstance(windowSize, basestring):
+    delta = parseTimeOffset(windowSize)
+    windowInterval = abs(delta.seconds + (delta.days * 86400))
+
+  # set previewSeconds and constant based on windowSize string or integer
+  if windowInterval:
+    previewSeconds = windowInterval
+    constant = (float(2) / (int(windowInterval) + 1))
+  else:
+    previewSeconds = max([s.step for s in seriesList]) * int(windowSize)
+    constant = (float(2) / (int(windowSize) + 1))
+
+  # ignore original data and pull new, including our preview
+  # data from earlier is needed to calculate the early results
+  newContext = requestContext.copy()
+  newContext['startTime'] = requestContext['startTime'] -  timedelta(seconds=previewSeconds)
+  previewList = evaluateTokens(newContext, requestContext['args'][0])
+  result = []
+
+  for series in previewList:
+    if windowInterval:
+      windowPoints = windowInterval / series.step
+    else:
+      windowPoints = int(windowSize)
+
+    if isinstance(windowSize, basestring):
+      newName = 'exponentialMovingAverage(%s,"%s")' % (series.name, windowSize)
+    else:
+      newName = "exponentialMovingAverage(%s,%s)" % (series.name, windowSize)
+
+    newSeries = TimeSeries(newName, series.start + previewSeconds, series.end, series.step, [])
+    newSeries.pathExpression = newName
+    window_sum = safeSum(series[:windowPoints]) or 0
+    count = safeLen(series[:windowPoints])
+    ema = safeDiv(window_sum, count)
+
+    if ema is None:
+        ema = 0
+    else:
+        ema = float(ema)
+
+    newSeries.append(ema)
+
+    for i in range(windowPoints, len(series)):
+      if series[i] is not None:
+        ema = float(constant) * float(series[i]) + (1 - float(constant)) * float(ema)
+        newSeries.append(round(ema, 3))
+      else:
+        newSeries.append(None)
+
+    result.append(newSeries)
+
+  return result
+
 def movingMedian(requestContext, seriesList, windowSize):
   """
   Graphs the moving median of a metric (or metrics) over a fixed number of
@@ -874,6 +957,41 @@ def pow(requestContext, seriesList, factor):
     for i,value in enumerate(series):
       series[i] = safePow(value,factor)
   return seriesList
+
+def powSeries(requestContext, *seriesLists):
+  """
+  Takes two or more series and pows their points. A constant line may be
+  used.
+
+  Example:
+
+  .. code-block:: none
+
+    &target=powSeries(Server.instance01.app.requests, Server.instance01.app.replies)
+
+
+  """
+
+  try:
+    (seriesList,start,end,step) = normalize(seriesLists)
+  except:
+    return []
+  name = "powSeries(%s)" % ','.join([s.name for s in seriesList])
+  values = []
+  for row in izip(*seriesList):
+    first = True
+    tmpVal = None
+    for element in row:
+      # If it is a first iteration - tmpVal needs to be element
+      if first:
+        tmpVal = element
+        first = False
+      else:
+        tmpVal = safePow(tmpVal, element)
+    values.append(tmpVal)
+  series = TimeSeries(name,start,end,step,values)
+  series.pathExpression = name
+  return [series]
 
 def squareRoot(requestContext, seriesList):
   """
@@ -1053,6 +1171,186 @@ def movingAverage(requestContext, seriesList, windowSize):
 
   return result
 
+def movingSum(requestContext, seriesList, windowSize):
+  """
+  Graphs the moving sum of a metric (or metrics) over a fixed number of
+  past points, or a time interval.
+
+  Takes one metric or a wildcard seriesList followed by a number N of datapoints
+  or a quoted string with a length of time like '1hour' or '5min' (See ``from /
+  until`` in the render\_api_ for examples of time formats). Graphs the
+  sum of the preceeding datapoints for each point on the graph.
+
+  Example:
+
+  .. code-block:: none
+
+    &target=movingSum(Server.instance01.requests,10)
+    &target=movingSum(Server.instance*.errors,'5min')
+
+  """
+  if not seriesList:
+    return []
+  windowInterval = None
+  if isinstance(windowSize, basestring):
+    delta = parseTimeOffset(windowSize)
+    windowInterval = abs(delta.seconds + (delta.days * 86400))
+
+  if windowInterval:
+    previewSeconds = windowInterval
+  else:
+    previewSeconds = max([s.step for s in seriesList]) * int(windowSize)
+
+  # ignore original data and pull new, including our preview
+  # data from earlier is needed to calculate the early results
+  newContext = requestContext.copy()
+  newContext['startTime'] = requestContext['startTime'] -  timedelta(seconds=previewSeconds)
+  previewList = evaluateTokens(newContext, requestContext['args'][0])
+  result = []
+
+  for series in previewList:
+    if windowInterval:
+      windowPoints = windowInterval / series.step
+    else:
+      windowPoints = int(windowSize)
+
+    if isinstance(windowSize, basestring):
+      newName = 'movingSum(%s,"%s")' % (series.name, windowSize)
+    else:
+      newName = "movingSum(%s,%s)" % (series.name, windowSize)
+
+    newSeries = TimeSeries(newName, series.start + previewSeconds, series.end, series.step, [])
+    newSeries.pathExpression = newName
+
+    window_sum = safeSum(series[:windowPoints])
+    newSeries.append(window_sum)
+    for n, last in enumerate(series[windowPoints:-1]):
+      if series[n] is not None:
+        window_sum -= series[n]
+      if last is not None:
+        window_sum = (window_sum or 0) + last
+      newSeries.append(window_sum)
+
+    result.append(newSeries)
+
+  return result
+
+def movingMin(requestContext, seriesList, windowSize):
+  """
+  Graphs the moving minimum of a metric (or metrics) over a fixed number of
+  past points, or a time interval.
+
+  Takes one metric or a wildcard seriesList followed by a number N of datapoints
+  or a quoted string with a length of time like '1hour' or '5min' (See ``from /
+  until`` in the render\_api_ for examples of time formats). Graphs the
+  minimum of the preceeding datapoints for each point on the graph.
+
+  Example:
+
+  .. code-block:: none
+
+    &target=movingMin(Server.instance01.requests,10)
+    &target=movingMin(Server.instance*.errors,'5min')
+
+  """
+  if not seriesList:
+    return []
+  windowInterval = None
+  if isinstance(windowSize, basestring):
+    delta = parseTimeOffset(windowSize)
+    windowInterval = abs(delta.seconds + (delta.days * 86400))
+
+  if windowInterval:
+    previewSeconds = windowInterval
+  else:
+    previewSeconds = max([s.step for s in seriesList]) * int(windowSize)
+
+  # ignore original data and pull new, including our preview
+  # data from earlier is needed to calculate the early results
+  newContext = requestContext.copy()
+  newContext['startTime'] = requestContext['startTime'] -  timedelta(seconds=previewSeconds)
+  previewList = evaluateTokens(newContext, requestContext['args'][0])
+  result = []
+
+  for series in previewList:
+    if windowInterval:
+      windowPoints = windowInterval / series.step
+    else:
+      windowPoints = int(windowSize)
+
+    if isinstance(windowSize, basestring):
+      newName = 'movingMin(%s,"%s")' % (series.name, windowSize)
+    else:
+      newName = "movingMin(%s,%s)" % (series.name, windowSize)
+
+    newSeries = TimeSeries(newName, series.start + previewSeconds, series.end, series.step, [])
+    newSeries.pathExpression = newName
+    for i in range(windowPoints,len(series)):
+      window = series[i - windowPoints:i]
+      newSeries.append(safeMin(window))
+
+    result.append(newSeries)
+
+  return result
+
+def movingMax(requestContext, seriesList, windowSize):
+  """
+  Graphs the moving maximum of a metric (or metrics) over a fixed number of
+  past points, or a time interval.
+
+  Takes one metric or a wildcard seriesList followed by a number N of datapoints
+  or a quoted string with a length of time like '1hour' or '5min' (See ``from /
+  until`` in the render\_api_ for examples of time formats). Graphs the
+  maximum of the preceeding datapoints for each point on the graph.
+
+  Example:
+
+  .. code-block:: none
+
+    &target=movingMax(Server.instance01.requests,10)
+    &target=movingMax(Server.instance*.errors,'5min')
+
+  """
+  if not seriesList:
+    return []
+  windowInterval = None
+  if isinstance(windowSize, basestring):
+    delta = parseTimeOffset(windowSize)
+    windowInterval = abs(delta.seconds + (delta.days * 86400))
+
+  if windowInterval:
+    previewSeconds = windowInterval
+  else:
+    previewSeconds = max([s.step for s in seriesList]) * int(windowSize)
+
+  # ignore original data and pull new, including our preview
+  # data from earlier is needed to calculate the early results
+  newContext = requestContext.copy()
+  newContext['startTime'] = requestContext['startTime'] -  timedelta(seconds=previewSeconds)
+  previewList = evaluateTokens(newContext, requestContext['args'][0])
+  result = []
+
+  for series in previewList:
+    if windowInterval:
+      windowPoints = windowInterval / series.step
+    else:
+      windowPoints = int(windowSize)
+
+    if isinstance(windowSize, basestring):
+      newName = 'movingMax(%s,"%s")' % (series.name, windowSize)
+    else:
+      newName = "movingMax(%s,%s)" % (series.name, windowSize)
+
+    newSeries = TimeSeries(newName, series.start + previewSeconds, series.end, series.step, [])
+    newSeries.pathExpression = newName
+    for i in range(windowPoints,len(series)):
+      window = series[i - windowPoints:i]
+      newSeries.append(safeMax(window))
+
+    result.append(newSeries)
+
+  return result
+
 def cumulative(requestContext, seriesList):
   """
   Takes one metric or a wildcard seriesList.
@@ -1137,7 +1435,7 @@ def derivative(requestContext, seriesList):
 
 def perSecond(requestContext, seriesList, maxValue=None):
   """
-  Derivative adjusted for the series time interval
+  NonNegativeDerivative adjusted for the series time interval
   This is useful for taking a running total metric and showing how many requests
   per second were handled.
 
@@ -1148,7 +1446,7 @@ def perSecond(requestContext, seriesList, maxValue=None):
     &target=perSecond(company.server.application01.ifconfig.TXPackets)
 
   Each time you run ifconfig, the RX and TXPackets are higher (assuming there
-  is network traffic.) By applying the derivative function, you can get an
+  is network traffic.) By applying the nonNegativeDerivative function, you can get an
   idea of the packets per minute sent or received, even though you're only
   recording the total.
   """
@@ -1522,6 +1820,23 @@ def cactiStyle(requestContext, seriesList, system=None, units=None):
             -minLen, minimum)
   return seriesList
 
+
+def _getFirstPathExpression(name):
+  """Returns the first metric path in an expression."""
+  tokens = grammar.parseString(name)
+  pathExpression = None
+  while pathExpression is None:
+    if tokens.pathExpression:
+      pathExpression = tokens.pathExpression
+    elif tokens.expression:
+      tokens = tokens.expression
+    elif tokens.call:
+      tokens = tokens.call.args[0]
+    else:
+      break
+  return pathExpression
+
+
 def aliasByNode(requestContext, seriesList, *nodes):
   """
   Takes a seriesList and applies an alias derived from one or more "node"
@@ -1535,7 +1850,8 @@ def aliasByNode(requestContext, seriesList, *nodes):
   if isinstance(nodes, int):
     nodes=[nodes]
   for series in seriesList:
-    metric_pieces = re.search('(?:.*\()?(?P<name>[-\w*\.]+)(?:,|\)?.*)?',series.name).groups()[0].split('.')
+    pathExpression = _getFirstPathExpression(series.name)
+    metric_pieces = pathExpression.split('.')
     series.name = '.'.join(metric_pieces[n] for n in nodes)
   return seriesList
 
@@ -1548,9 +1864,7 @@ def aliasByMetric(requestContext, seriesList):
     &target=aliasByMetric(carbon.agents.graphite.creates)
 
   """
-  for series in seriesList:
-    series.name = series.name.split('.')[-1].split(',')[0]
-  return seriesList
+  return substr(requestContext, seriesList, -1, 0)
 
 def legendValue(requestContext, seriesList, *valueTypes):
   """
@@ -1698,7 +2012,8 @@ def maximumAbove(requestContext, seriesList, n):
   """
   results = []
   for series in seriesList:
-    if safeMax(series) > n:
+    val = safeMax(series)
+    if val is not None and val > n:
       results.append(series)
   return results
 
@@ -1717,7 +2032,8 @@ def minimumAbove(requestContext, seriesList, n):
   """
   results = []
   for series in seriesList:
-    if safeMin(series) > n:
+    val = safeMin(series)
+    if val is not None and val > n:
       results.append(series)
   return results
 
@@ -1737,7 +2053,8 @@ def maximumBelow(requestContext, seriesList, n):
 
   result = []
   for series in seriesList:
-    if safeMax(series) <= n:
+    val = safeMax(series)
+    if val is None or val <= n:
       result.append(series)
   return result
 
@@ -1757,7 +2074,8 @@ def minimumBelow(requestContext, seriesList, n):
 
   result = []
   for series in seriesList:
-    if safeMin(series) <= n:
+    val = safeMin(series)
+    if val is None or val <= n:
       result.append(series)
   return result
 
@@ -1832,7 +2150,12 @@ def currentAbove(requestContext, seriesList, n):
   Draws the servers with more than 50 busy threads.
 
   """
-  return [ series for series in seriesList if safeLast(series) >= n ]
+  results = []
+  for series in seriesList:
+    val = safeLast(series)
+    if val is not None and val >= n:
+      results.append(series)
+  return results
 
 def currentBelow(requestContext, seriesList, n):
   """
@@ -1849,7 +2172,12 @@ def currentBelow(requestContext, seriesList, n):
   Draws the servers with less than 3 busy threads.
 
   """
-  return [ series for series in seriesList if safeLast(series) <= n ]
+  results = []
+  for series in seriesList:
+    val = safeLast(series)
+    if val is None or val <= n:
+      results.append(series)
+  return results
 
 def highestAverage(requestContext, seriesList, n):
   """
@@ -1902,7 +2230,12 @@ def averageAbove(requestContext, seriesList, n):
   Draws the servers with average values above 25.
 
   """
-  return [ series for series in seriesList if safeDiv(safeSum(series),safeLen(series)) >= n ]
+  results = []
+  for series in seriesList:
+    val = safeAvg(series)
+    if val is not None and val >= n:
+      results.append(series)
+  return results
 
 def averageBelow(requestContext, seriesList, n):
   """
@@ -1919,7 +2252,12 @@ def averageBelow(requestContext, seriesList, n):
   Draws the servers with average values below 25.
 
   """
-  return [ series for series in seriesList if safeDiv(safeSum(series),safeLen(series)) <= n ]
+  results = []
+  for series in seriesList:
+    val = safeAvg(series)
+    if val is None or val <= n:
+      results.append(series)
+  return results
 
 def _getPercentile(points, n, interpolate=False):
   """
@@ -3165,7 +3503,7 @@ def applyByNode(requestContext, seriesList, nodeNum, templateFunction, newName=N
   Takes a seriesList and applies some complicated function (described by a string), replacing templates with unique
   prefixes of keys from the seriesList (the key is all nodes up to the index given as `nodeNum`).
 
-  If the `newName` paramter is provided, the name of the resulting series will be given by that parameter, with any
+  If the `newName` parameter is provided, the name of the resulting series will be given by that parameter, with any
   "%" characters replaced by the unique prefix.
 
   Example:
@@ -3314,14 +3652,9 @@ def smartSummarize(requestContext, seriesList, intervalString, func='sum', align
   elif interval >= MINUTE:
     requestContext['startTime'] = datetime(s.year, s.month, s.day, s.hour, s.minute, tzinfo = s.tzinfo)
 
-  for i,series in enumerate(seriesList):
-    # XXX: breaks with summarize(metric.{a,b})
-    #      each series.pathExpression == metric.{a,b}
-    newSeries = evaluateTarget(requestContext, series.pathExpression)[0]
-    series[0:len(series)] = newSeries
-    series.start = newSeries.start
-    series.end = newSeries.end
-    series.step = newSeries.step
+  # Ignore the originally fetched data and pull new using the
+  # modified requestContext.
+  seriesList = evaluateTokens(requestContext, requestContext['args'][0])
 
   for series in seriesList:
     buckets = {} # { timestamp: [values] }
@@ -3487,13 +3820,12 @@ def hitcount(requestContext, seriesList, intervalString, alignToInterval = False
     elif interval >= MINUTE:
       requestContext['startTime'] = datetime(s.year, s.month, s.day, s.hour, s.minute)
 
-    for i,series in enumerate(seriesList):
-      newSeries = evaluateTarget(requestContext, series.pathExpression)[0]
+    # Ignore the originally fetched data and pull new using
+    # the modified requestContext.
+    seriesList = evaluateTokens(requestContext, requestContext['args'][0])
+    for series in seriesList:
       intervalCount = int((series.end - series.start) / interval)
-      series[0:len(series)] = newSeries
-      series.start = newSeries.start
-      series.end =  newSeries.start + (intervalCount * interval) + interval
-      series.step = newSeries.step
+      series.end = series.start + (intervalCount * interval) + interval
 
   for series in seriesList:
     length = len(series)
@@ -3671,7 +4003,7 @@ def events(requestContext, *tags):
   returns all events.
   """
   step = 1
-  name = "events(" + ", ".join(tags) + ")"
+  name = "events(\"" + "\", \"".join(tags) + "\")"
   if tags == ("*",):
     tags = None
 
@@ -3708,6 +4040,7 @@ def pieMaximum(requestContext, series):
 def pieMinimum(requestContext, series):
   return min(series)
 
+
 PieFunctions = {
   'average': pieAverage,
   'maximum': pieMaximum,
@@ -3741,6 +4074,7 @@ SeriesFunctions = {
   'delay': delay,
   'squareRoot': squareRoot,
   'pow': pow,
+  'powSeries': powSeries,
   'perSecond': perSecond,
   'integral': integral,
   'integralByInterval' : integralByInterval,
@@ -3759,6 +4093,9 @@ SeriesFunctions = {
   # Calculate functions
   'movingAverage': movingAverage,
   'movingMedian': movingMedian,
+  'movingSum': movingSum,
+  'movingMin': movingMin,
+  'movingMax': movingMax,
   'stdev': stdev,
   'holtWintersForecast': holtWintersForecast,
   'holtWintersConfidenceBands': holtWintersConfidenceBands,
@@ -3769,6 +4106,7 @@ SeriesFunctions = {
   'pct': asPercent,
   'diffSeries': diffSeries,
   'divideSeries': divideSeries,
+  'exponentialMovingAverage': exponentialMovingAverage,
 
   # Series Filter functions
   'fallbackSeries': fallbackSeries,

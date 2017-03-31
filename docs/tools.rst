@@ -157,9 +157,6 @@ Visualization
   - synchronize dashboards between multiple Graphite servers
   - keep dashboards in YAML format
 
-`Graphite-Observer`_
-  A real-time monitor dashboard for Graphite.
-
 `Graphite-Tattle`_
   A self-service dashboard frontend for Graphite and `Ganglia`_.
 
@@ -192,6 +189,9 @@ Visualization
 
 `Pencil`_
   A monitoring frontend for graphite. It runs a webserver that dishes out pretty Graphite URLs in interesting and intuitive layouts.
+  
+`Targets-io`_
+  A dashboard application for organizing, analyzing, benchmarking and reporting of performance test results. All performance test metrics are stored in Graphite and can be benchmarked between test runs, providing automated feedback on the performance of an application.
 
 `Tasseo`_
   A lightweight, easily configurable, real-time dashboard for Graphite metrics.
@@ -317,7 +317,6 @@ Other
 .. _graphite-beacon: https://github.com/klen/graphite-beacon
 .. _graphite-dashboardcli: https://github.com/blacked/graphite-dashboardcli
 .. _Graphite-Newrelic: https://github.com/gingerlime/graphite-newrelic
-.. _Graphite-Observer: https://github.com/huoxy/graphite-observer
 .. _Graphite-relay: https://github.com/markchadwick/graphite-relay
 .. _Graphite-Tattle: https://github.com/wayfair/Graphite-Tattle
 .. _graphite-to-zabbix: https://github.com/blacked/graphite-to-zabbix
@@ -363,6 +362,7 @@ Other
 .. _SSC Serv: https://ssc-serv.com
 .. _statsd: https://github.com/etsy/statsd
 .. _Tasseo: https://github.com/obfuscurity/tasseo
+.. _Targets-io: https://github.com/dmoll1974/targets-io
 .. _Terphite: https://github.com/benwtr/terphite
 .. _Tessera: https://github.com/urbanairship/tessera
 .. _Therry: https://github.com/obfuscurity/therry

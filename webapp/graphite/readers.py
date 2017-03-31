@@ -1,6 +1,13 @@
 import os
 import sys
 import time
+# Use the built-in version of scandir/stat if possible, otherwise
+# use the scandir module version
+try:
+    from os import scandir, stat # noqa # pylint: disable=unused-import
+except ImportError:
+    from scandir import scandir, stat # noqa # pylint: disable=unused-import
+
 from graphite.intervals import Interval, IntervalSet
 from graphite.carbonlink import CarbonLink
 from graphite.logger import log
@@ -10,6 +17,16 @@ try:
   import whisper
 except ImportError:
   whisper = False
+
+# The parser was repalcing __readHeader with the <class>__readHeader
+# which was not working.
+if bool(whisper):
+  whisper__readHeader = whisper.__readHeader
+
+try:
+  import ceres
+except ImportError:
+  ceres = False
 
 try:
   import rrdtool
@@ -42,9 +59,15 @@ class MultiReader(object):
       interval_sets.extend( node.intervals.intervals )
     return IntervalSet( sorted(interval_sets) )
 
-  def fetch(self, startTime, endTime):
+  def fetch(self, startTime, endTime, now=None, requestContext=None):
     # Start the fetch on each node
-    fetches = [ n.fetch(startTime, endTime) for n in self.nodes ]
+    fetches = []
+
+    for n in self.nodes:
+      try:
+        fetches.append(n.fetch(startTime, endTime, now, requestContext))
+      except:
+        log.exception("Failed to initiate subfetch for %s" % str(n))
 
     def merge_results():
       results = {}
@@ -111,7 +134,7 @@ class MultiReader(object):
 
 class CeresReader(object):
   __slots__ = ('ceres_node', 'real_metric_path')
-  supported = True
+  supported = bool(ceres)
 
   def __init__(self, ceres_node, real_metric_path):
     self.ceres_node = ceres_node
@@ -155,11 +178,15 @@ class WhisperReader(object):
 
   def get_intervals(self):
     start = time.time() - whisper.info(self.fs_path)['maxRetention']
-    end = max( os.stat(self.fs_path).st_mtime, start )
+    end = max( stat(self.fs_path).st_mtime, start )
     return IntervalSet( [Interval(start, end)] )
 
   def fetch(self, startTime, endTime):
-    data = whisper.fetch(self.fs_path, startTime, endTime)
+    try:
+      data = whisper.fetch(self.fs_path, startTime, endTime)
+    except IOError:
+      log.exception("Failed fetch of whisper file '%s'" % self.fs_path)
+      return None
     if not data:
       return None
 
@@ -167,12 +194,12 @@ class WhisperReader(object):
     (start,end,step) = time_info
 
     meta_info = whisper.info(self.fs_path)
+    aggregation_method = meta_info['aggregationMethod']
     lowest_step = min([i['secondsPerPoint'] for i in meta_info['archives']])
     # Merge in data from carbon's cache
     cached_datapoints = []
     try:
-        if step == lowest_step:
-            cached_datapoints = CarbonLink.query(self.real_metric_path)
+      cached_datapoints = CarbonLink.query(self.real_metric_path)
     except:
       log.exception("Failed CarbonLink query '%s'" % self.real_metric_path)
       cached_datapoints = []
@@ -183,7 +210,8 @@ class WhisperReader(object):
     values = merge_with_cache(cached_datapoints,
                               start,
                               step,
-                              values)
+                              values,
+                              aggregation_method)
 
     return time_info, values
 
@@ -299,12 +327,12 @@ class GzippedWhisperReader(WhisperReader):
   def get_intervals(self):
     fh = gzip.GzipFile(self.fs_path, 'rb')
     try:
-      info = whisper.__readHeader(fh) # evil, but necessary.
+      info = whisper__readHeader(fh) # evil, but necessary.
     finally:
       fh.close()
 
     start = time.time() - info['maxRetention']
-    end = max( os.stat(self.fs_path).st_mtime, start )
+    end = max( stat(self.fs_path).st_mtime, start )
     return IntervalSet( [Interval(start, end)] )
 
   def fetch(self, startTime, endTime):
@@ -330,7 +358,7 @@ class RRDReader:
 
   def get_intervals(self):
     start = time.time() - self.get_retention(self.fs_path)
-    end = max( os.stat(self.fs_path).st_mtime, start )
+    end = max( stat(self.fs_path).st_mtime, start )
     return IntervalSet( [Interval(start, end)] )
 
   def fetch(self, startTime, endTime):
@@ -380,11 +408,42 @@ class RRDReader:
     return  retention_points * info['step']
 
 
-def merge_with_cache(cached_datapoints, start, step, values):
+def merge_with_cache(cached_datapoints, start, step, values, func=None):
 
-  for (timestamp, value) in cached_datapoints:
-      interval = timestamp - (timestamp % step)
+  consolidated=[]
 
+  # Similar to the function in render/datalib:TimeSeries
+  def consolidate(func, values):
+      usable = [v for v in values if v is not None]
+      if not usable: return None
+      if func == 'sum':
+          return sum(usable)
+      if func == 'average':
+          return float(sum(usable)) / len(usable)
+      if func == 'max':
+          return max(usable)
+      if func == 'min':
+          return min(usable)
+      if func == 'last':
+          return usable[-1]
+      raise Exception("Invalid consolidation function: '%s'" % func)
+
+  if func:
+      consolidated_dict = {}
+      for (timestamp, value) in cached_datapoints:
+          interval = timestamp - (timestamp % step)
+          if interval in consolidated_dict:
+              consolidated_dict[interval].append(value)
+          else:
+              consolidated_dict[interval] = [value]
+      for interval in consolidated_dict:
+          value = consolidate(func, consolidated_dict[interval])
+          consolidated.append((interval, value))
+
+  else:
+      consolidated = cached_datapoints
+
+  for (interval, value) in consolidated:
       try:
           i = int(interval - start) / step
           if i < 0:

@@ -2,14 +2,16 @@ import fnmatch
 import os.path
 import re
 
+EXPAND_BRACES_RE = re.compile(r'.*(\{.*?[^\\]?\})')
 
 def get_real_metric_path(absolute_path, metric_path):
   # Support symbolic links (real_metric_path ensures proper cache queries)
-  if os.path.islink(absolute_path):
-    real_fs_path = os.path.realpath(absolute_path)
+  real_fs_path = os.path.realpath(absolute_path)
+  if absolute_path != real_fs_path:
     relative_fs_path = metric_path.replace('.', os.sep)
-    base_fs_path = absolute_path[:-len(relative_fs_path)]
-    relative_real_fs_path = real_fs_path[len(base_fs_path):]
+    base_fs_path = os.path.dirname(absolute_path[:-len(relative_fs_path)])
+    real_base_fs_path = os.path.realpath(base_fs_path)
+    relative_real_fs_path = real_fs_path[len(real_base_fs_path):].lstrip('/')
     return fs_to_metric(relative_real_fs_path)
 
   return metric_path
@@ -42,37 +44,39 @@ def extract_variants(pattern):
 
 
 def match_entries(entries, pattern):
-    # First we check for pattern variants (ie. {foo,bar}baz = foobaz or barbaz)
-    matching = []
+  # First we check for pattern variants (ie. {foo,bar}baz = foobaz or barbaz)
+  matching = []
 
-    for variant in expand_braces(pattern):
-      matching.extend(fnmatch.filter(entries, variant))
+  for variant in expand_braces(pattern):
+    matching.extend(fnmatch.filter(entries, variant))
 
-    return list(_deduplicate(matching))
+  return list(_deduplicate(matching))
 
 
 """
-    Brace expanding patch for python3 borrowed from:
-    https://bugs.python.org/issue9584
+  Brace expanding patch for python3 borrowed from:
+  https://bugs.python.org/issue9584
 """
-def expand_braces(orig):
-    r = r'.*(\{.+?[^\\]\})'
-    p = re.compile(r)
+def expand_braces(s):
+  res = list()
 
-    s = orig[:]
-    res = list()
+  # Used instead of s.strip('{}') because strip is greedy.
+  # We want to remove only ONE leading { and ONE trailing }, if both exist
+  def remove_outer_braces(s):
+    if s[0]== '{' and s[-1]=='}':
+      return s[1:-1]
+    return s
 
-    m = p.search(s)
-    if m is not None:
-      sub = m.group(1)
-      open_brace = s.find(sub)
-      close_brace = open_brace + len(sub) - 1
-      if sub.find(',') != -1:
-        for pat in sub.strip('{}').split(','):
-          res.extend(expand_braces(s[:open_brace] + pat + s[close_brace + 1:]))
-      else:
-          res.extend(expand_braces(s[:open_brace] + sub.replace('}', '\\}') + s[close_brace + 1:]))
+  m = EXPAND_BRACES_RE.search(s)
+  if m is not None:
+    sub = m.group(1)
+    open_brace, close_brace = m.span(1)
+    if ',' in sub:
+      for pat in sub.strip('{}').split(','):
+        res.extend(expand_braces(s[:open_brace] + pat + s[close_brace:]))
     else:
+        res.extend(expand_braces(s[:open_brace] + remove_outer_braces(sub) + s[close_brace:]))
+  else:
       res.append(s.replace('\\}', '}'))
 
-    return list(set(res))
+  return list(set(res))
