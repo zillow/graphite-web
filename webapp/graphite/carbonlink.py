@@ -97,6 +97,12 @@ class CarbonLinkPool:
     log.cache("CarbonLink cache-query-precheck request for %s" % (metric))
     return results["exists"]
 
+  def expand_query(self, metric):
+    request = dict(type='cache-query-expand-wildcards', metric=metric)
+    results = self.send_request(request)
+    log.cache("CarbonLink cache-query-expand-wildcards request for %s" % (metric))
+    return results["queries"]
+
   def get_metadata(self, metric, key):
     request = dict(type='get-metadata', metric=metric, key=key)
     results = self.send_request(request)
