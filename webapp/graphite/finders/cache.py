@@ -31,7 +31,7 @@ class CarbonCacheFinder:
                 # expand queries in CarbonLink
                 metrics = CarbonLink.expand_query(metric)
                 # check all metrics in same valid query range
-                exists = all((CarbonLink.precheck(m, query.startTime) for m in metric))
+                exists = all((CarbonLink.precheck(m, query.startTime) for m in metrics))
                 if exists:
                     for metric in metrics:
                         reader = CarbonCacheReader(metric)
