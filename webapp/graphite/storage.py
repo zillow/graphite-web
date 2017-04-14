@@ -52,8 +52,12 @@ class Store:
     # DO NOT hit disk. It helps us reduce iowait.
     # Please use the right version of carbon-cache.
     # For wildcard query, carbon-cache returns None certainly...
+    found_in_cache = False
     for leaf_node in self.carbon_cache_finder.find_nodes(query):
       yield leaf_node
+      found_in_cache = True
+
+    if found_in_cache:
       return
 
     # Search locally
