@@ -19,6 +19,8 @@ from django.conf import settings
 from graphite.util import epoch
 from graphite.carbonlink import CarbonLink
 import time
+from graphite.util import timebounds, logtime
+
 
 from traceback import format_exc
 
@@ -32,6 +34,7 @@ class TimeSeries(list):
     self.consolidationFunc = consolidate
     self.valuesPerPoint = 1
     self.options = {}
+    self.pathExpression = name
 
 
   def __eq__(self, other):
@@ -104,115 +107,174 @@ class TimeSeries(list):
       'end' : self.end,
       'step' : self.step,
       'values' : list(self),
+      'pathExpression' : self.pathExpression,
     }
 
 
+@logtime()
+def _fetchData(pathExpr, startTime, endTime, now, requestContext, seriesList):
+  if settings.REMOTE_PREFETCH_DATA:
+    matching_nodes = [node for node in STORE.find(pathExpr, startTime, endTime, local=True)]
+
+    # inflight_requests is only present if at least one remote store
+    # has been queried
+    if 'inflight_requests' in requestContext:
+      fetches = requestContext['inflight_requests']
+    else:
+      fetches = {}
+
+    def result_queue_generator():
+      for node in matching_nodes:
+        if node.is_leaf:
+          yield (node.path, node.fetch(startTime, endTime, now, requestContext))
+
+      log.info(
+        'render.datalib.fetchData:: result_queue_generator got {count} fetches'
+        .format(count=len(fetches)),
+      )
+      for key, fetch in fetches.iteritems():
+        log.info(
+          'render.datalib.fetchData:: getting results of {host}'
+          .format(host=key),
+        )
+
+        if isinstance(fetch, FetchInProgress):
+          fetch = fetch.waitForResults()
+
+        if fetch is None:
+          log.info('render.datalib.fetchData:: fetch is None')
+          continue
+
+        for result in fetch:
+          yield (
+            result['path'],
+            (
+              (result['start'], result['end'], result['step']),
+              result['values'],
+            ),
+          )
+
+    result_queue = result_queue_generator()
+  else:
+    matching_nodes = [node for node in STORE.find(pathExpr, startTime, endTime, local=requestContext['localOnly'])]
+    result_queue = [
+      (node.path, node.fetch(startTime, endTime, now, requestContext))
+      for node in matching_nodes
+      if node.is_leaf
+    ]
+
+  log.info("render.datalib.fetchData :: starting to merge")
+  for path, results in result_queue:
+    if isinstance(results, FetchInProgress):
+      results = results.waitForResults()
+
+    if not results:
+      log.info("render.datalib.fetchData :: no results for %s.fetch(%s, %s)" % (path, startTime, endTime))
+      continue
+
+    try:
+      (timeInfo, values) = results
+    except ValueError as e:
+      raise Exception("could not parse timeInfo/values from metric '%s': %s" % (path, e))
+    (start, end, step) = timeInfo
+
+    series = TimeSeries(path, start, end, step, values)
+
+    # hack to pass expressions through to render functions
+    series.pathExpression = pathExpr
+
+    # Used as a cache to avoid recounting series None values below.
+    series_best_nones = {}
+
+    if series.name in seriesList:
+      # This counts the Nones in each series, and is unfortunately O(n) for each
+      # series, which may be worth further optimization. The value of doing this
+      # at all is to avoid the "flipping" effect of loading a graph multiple times
+      # and having inconsistent data returned if one of the backing stores has
+      # inconsistent data. This is imperfect as a validity test, but in practice
+      # nicely keeps us using the "most complete" dataset available. Think of it
+      # as a very weak CRDT resolver.
+      candidate_nones = 0
+      if not settings.REMOTE_STORE_MERGE_RESULTS:
+        candidate_nones = len(
+          [val for val in values if val is None])
+
+      known = seriesList[series.name]
+      # To avoid repeatedly recounting the 'Nones' in series we've already seen,
+      # cache the best known count so far in a dict.
+      if known.name in series_best_nones:
+        known_nones = series_best_nones[known.name]
+      else:
+        known_nones = len([val for val in known if val is None])
+
+      if known_nones > candidate_nones:
+        if settings.REMOTE_STORE_MERGE_RESULTS:
+          # This series has potential data that might be missing from
+          # earlier series.  Attempt to merge in useful data and update
+          # the cache count.
+          log.info("Merging multiple TimeSeries for %s" % known.name)
+          for i, j in enumerate(known):
+            if j is None and series[i] is not None:
+              known[i] = series[i]
+              known_nones -= 1
+          # Store known_nones in our cache
+          series_best_nones[known.name] = known_nones
+        else:
+          # Not merging data -
+          # we've found a series better than what we've already seen. Update
+          # the count cache and replace the given series in the array.
+          series_best_nones[known.name] = candidate_nones
+          seriesList[known.name] = series
+      else:
+        if settings.REMOTE_PREFETCH_DATA:
+          # if we're using REMOTE_PREFETCH_DATA we can save some time by skipping
+          # find, but that means we don't know how many nodes to expect so we
+          # have to iterate over all returned results
+          continue
+
+        # In case if we are merging data - the existing series has no gaps and
+        # there is nothing to merge together.  Save ourselves some work here.
+        #
+        # OR - if we picking best serie:
+        #
+        # We already have this series in the seriesList, and the
+        # candidate is 'worse' than what we already have, we don't need
+        # to compare anything else. Save ourselves some work here.
+        break
+
+    else:
+      # If we looked at this series above, and it matched a 'known'
+      # series already, then it's already in the series list (or ignored).
+      # If not, append it here.
+      seriesList[series.name] = series
+
+  # Stabilize the order of the results by ordering the resulting series by name.
+  # This returns the result ordering to the behavior observed pre PR#1010.
+  return [seriesList[k] for k in sorted(seriesList)]
+
+
 # Data retrieval API
+@logtime()
 def fetchData(requestContext, pathExpr):
   seriesList = {}
-  startTime = int( epoch( requestContext['startTime'] ) )
-  endTime   = int( epoch( requestContext['endTime'] ) )
-
-  def _fetchData(pathExpr,startTime, endTime, requestContext, seriesList):
-    matching_nodes = STORE.find(pathExpr, startTime, endTime, local=requestContext['localOnly'])
-    fetches = [(node, node.fetch(startTime, endTime)) for node in matching_nodes if node.is_leaf]
-
-    for node, results in fetches:
-      if isinstance(results, FetchInProgress):
-        results = results.waitForResults()
-
-      if not results:
-        log.info("render.datalib.fetchData :: no results for %s.fetch(%s, %s)" % (node, startTime, endTime))
-        continue
-
-      try:
-          (timeInfo, values) = results
-      except ValueError as e:
-          raise Exception("could not parse timeInfo/values from metric '%s': %s" % (node.path, e))
-      (start, end, step) = timeInfo
-
-      series = TimeSeries(node.path, start, end, step, values)
-      series.pathExpression = pathExpr #hack to pass expressions through to render functions
-
-      # Used as a cache to avoid recounting series None values below.
-      series_best_nones = {}
-
-      if series.name in seriesList:
-        # This counts the Nones in each series, and is unfortunately O(n) for each
-        # series, which may be worth further optimization. The value of doing this
-        # at all is to avoid the "flipping" effect of loading a graph multiple times
-        # and having inconsistent data returned if one of the backing stores has
-        # inconsistent data. This is imperfect as a validity test, but in practice
-        # nicely keeps us using the "most complete" dataset available. Think of it
-        # as a very weak CRDT resolver.
-        candidate_nones = 0
-        if not settings.REMOTE_STORE_MERGE_RESULTS:
-          candidate_nones = len(
-            [val for val in series['values'] if val is None])
-
-        known = seriesList[series.name]
-        # To avoid repeatedly recounting the 'Nones' in series we've already seen,
-        # cache the best known count so far in a dict.
-        if known.name in series_best_nones:
-          known_nones = series_best_nones[known.name]
-        else:
-          known_nones = len([val for val in known if val is None])
-
-        if known_nones > candidate_nones:
-          if settings.REMOTE_STORE_MERGE_RESULTS:
-            # This series has potential data that might be missing from
-            # earlier series.  Attempt to merge in useful data and update
-            # the cache count.
-            log.info("Merging multiple TimeSeries for %s" % known.name)
-            for i, j in enumerate(known):
-              if j is None and series[i] is not None:
-                known[i] = series[i]
-                known_nones -= 1
-            # Store known_nones in our cache
-            series_best_nones[known.name] = known_nones
-          else:
-            # Not merging data -
-            # we've found a series better than what we've already seen. Update
-            # the count cache and replace the given series in the array.
-            series_best_nones[known.name] = candidate_nones
-            seriesList[known.name] = series
-        else:
-          # In case if we are merging data - the existing series has no gaps and there is nothing to merge
-          # together.  Save ourselves some work here.
-          #
-          # OR - if we picking best serie:
-          #
-          # We already have this series in the seriesList, and the
-          # candidate is 'worse' than what we already have, we don't need
-          # to compare anything else. Save ourselves some work here.
-          break
-
-          # If we looked at this series above, and it matched a 'known'
-          # series already, then it's already in the series list (or ignored).
-          # If not, append it here.
-      else:
-        seriesList[series.name] = series
-
-    # Stabilize the order of the results by ordering the resulting series by name.
-    # This returns the result ordering to the behavior observed pre PR#1010.
-    return [seriesList[k] for k in sorted(seriesList)]
+  (startTime, endTime, now) = timebounds(requestContext)
 
   retries = 1 # start counting at one to make log output and settings more readable
   while True:
     try:
-      seriesList = _fetchData(pathExpr, startTime, endTime, requestContext, seriesList)
-      # extend seriesList for new metric query
-      seriesList = _extend_for_new_metrics(seriesList, pathExpr, startTime, endTime)
-      return seriesList
-    except Exception, e:
+      seriesList = _fetchData(pathExpr, startTime, endTime, now, requestContext, seriesList)
+      break
+    except Exception:
       if retries >= settings.MAX_FETCH_RETRIES:
         log.exception("Failed after %s retry! Root cause:\n%s" %
             (settings.MAX_FETCH_RETRIES, format_exc()))
-        raise e
+        raise
       else:
         log.exception("Got an exception when fetching data! Try: %i of %i. Root cause:\n%s" %
                      (retries, settings.MAX_FETCH_RETRIES, format_exc()))
         retries += 1
+
+  return seriesList
 
 
 def nonempty(series):
@@ -221,102 +283,3 @@ def nonempty(series):
       return True
 
   return False
-
-
-def _extend_for_new_metrics(seriesList, pathExpr, startTime, endTime):
-  ################################################################################
-  ################################################################################
-  # Search for Carbon-cache in case for some metrics that has not been flushed yet
-
-  # If the series.name has alread existed in seriesList, then do nothing
-  # else extend the data in cache to seriesList.
-
-  # Only do this if step == lowest
-  # 1. Get infos from archive
-  #    based on time range to determine step
-  # 2. Only query cache if step == min(archive['secondsPerPoints'])
-  # 3. preprocess the pathExpr to be real metric path, then use
-  #    carbonlink to query MemCache
-  # 4. Edge case: pathExpr has wildcard (Ignored it for now)
-  #    For now, let's just support specific individual metric query
-
-  # Add a function like
-  # extend_for_new_metrics(seriesList, pathExpr)
-
-  clean_patterns = pathExpr.replace('\\', '')
-  has_wildcard = clean_patterns.find('{') > -1 or clean_patterns.find('[') > -1 or clean_patterns.find('*') > -1 or clean_patterns.find('?') > -1
-
-  # 1) CarbonLink has some hosts
-  # 2) has no wildcard
-  if CarbonLink.hosts and not has_wildcard:
-    # Check archives (archive['secondsPerPoints'])
-    # Required: retention configurations
-    # Load STORAGE_SCHEMAS_CONFIG or add API for that
-    metric = clean_patterns
-    schema = CarbonLink.get_storage_schema(metric)
-    archives = schema["archives"]
-    # Get lowest step
-    lowest_step = min([arch[0] for arch in archives])
-
-    now = int(time.time())
-    max_retention = max([arch[0] * arch[1] for arch in archives])
-
-    oldestTime = now - max_retention
-
-    # Some checks
-    if endTime is None:
-      endTime = now
-    if startTime is None:
-      return seriesList
-
-    fromTime = int(startTime)
-    untilTime = int(endTime)
-
-    # Compare with now
-    if fromTime > now:
-      return seriesList
-    if untilTime > now:
-      untilTime = now
-
-    # Compare with oldestTime
-    if fromTime < oldestTime:
-      fromTime = oldestTime
-    if untilTime < oldestTime:
-      return seriesList
-
-    diff = now - fromTime
-    # sorted_archives = sorted(archives, key=lambda x: x[0] * x[1])
-
-    target_arch = None
-    for archive in archives:
-      retention = archive[0] * archive[1]
-      if retention >= diff:
-        target_arch = archive
-        break
-    step = target_arch[0]
-    # Only check carbon-cache if step == lowest_step
-    if step == lowest_step:
-      cachedResults = CarbonLink.query(metric)
-      if cachedResults:
-        fromInterval = int(fromTime - (fromTime % step)) + step
-        untilInterval = int(untilTime - (untilTime % step)) + step
-        if fromInterval == untilInterval:
-          untilInterval += step
-        seriesDict = {series.name: series for series in seriesList}
-        # if metric in seriesDict, then do nothing
-        if metric in seriesDict:
-          return seriesList
-        # This is new metric!
-        points = (untilInterval - fromInterval) // step
-        values = [None] * points
-        for (timestamp, value) in cachedResults:
-          interval = int(timestamp - (timestamp % step))
-          i = (interval - fromInterval) / step
-          if i < 0 or i >= points:
-            continue
-          values[i] = value
-        newSeries = TimeSeries(metric, fromInterval, untilInterval, step, values)
-        seriesDict[metric] = newSeries
-        seriesList = [seriesDict[k] for k in sorted(seriesDict)]
-
-  return seriesList

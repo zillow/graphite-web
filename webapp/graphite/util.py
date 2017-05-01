@@ -35,8 +35,6 @@ except ImportError:
   from StringIO import StringIO
 
 from django.conf import settings
-from django.contrib.auth.models import User
-from graphite.account.models import Profile
 from graphite.logger import log
 
 
@@ -59,18 +57,12 @@ def epoch(dt):
   """
   return calendar.timegm(dt.astimezone(pytz.utc).timetuple())
 
-def getProfile(request, allowDefault=True):
-  if request.user.is_authenticated():
-    return Profile.objects.get_or_create(user=request.user)[0]
-  elif allowDefault:
-    return default_profile()
+def timebounds(requestContext):
+  startTime = int(epoch(requestContext['startTime']))
+  endTime = int(epoch(requestContext['endTime']))
+  now = int(epoch(requestContext['now']))
 
-
-def getProfileByUsername(username):
-  try:
-    return Profile.objects.get(user__username=username)
-  except Profile.DoesNotExist:
-    return None
+  return (startTime, endTime, now)
 
 def is_local_interface(host):
   is_ipv6 = False
@@ -123,21 +115,6 @@ def find_escaped_pattern_fields(pattern_string):
       yield index
 
 
-def default_profile():
-    # '!' is an unusable password. Since the default user never authenticates
-    # this avoids creating a default (expensive!) password hash at every
-    # default_profile() call.
-    user, created = User.objects.get_or_create(
-        username='default', defaults={'email': 'default@localhost.localdomain',
-                                      'password': '!'})
-    if created:
-        log.info("Default user didn't exist, created it")
-    profile, created = Profile.objects.get_or_create(user=user)
-    if created:
-        log.info("Default profile didn't exist, created it")
-    return profile
-
-
 def load_module(module_path, member=None):
   module_name = splitext(basename(module_path))[0]
   module_file = open(module_path, 'U')
@@ -155,6 +132,7 @@ def timestamp(datetime):
 def deltaseconds(timedelta):
   "Convert a timedelta object into seconds (same as timedelta.total_seconds() in Python 2.7+)"
   return (timedelta.microseconds + (timedelta.seconds + timedelta.days * 24 * 3600) * 10**6) / 10**6
+
 
 # This whole song & dance is due to pickle being insecure
 # The SafeUnpickler classes were largely derived from
@@ -236,7 +214,36 @@ def write_index(whisper_dir=None, ceres_dir=None, index=None):
   return None
 
 
-def build_index(base_path, extension, fd):
+def logtime(custom_msg=False):
+  def wrap(f):
+    def wrapped_f(*args, **kwargs):
+      msg = 'completed in'
+
+      t = time.time()
+      if custom_msg:
+        def set_msg(msg):
+          wrapped_f.msg = msg
+
+        kwargs['msg_setter'] = set_msg
+
+      res = f(*args, **kwargs)
+      msg = getattr(wrapped_f, 'msg', msg)
+
+      log.info(
+        '{module}.{name} :: {msg} {sec:.6}s'.format(
+          module=f.__module__,
+          name=f.__name__,
+          msg=msg,
+          sec=time.time() - t,
+        )
+      )
+      return res
+    return wrapped_f
+  return wrap
+
+
+@logtime(custom_msg=True)
+def build_index(base_path, extension, fd, msg_setter=None):
   t = time.time()
   total_entries = 0
   contents = os.walk(base_path, followlinks=True)
@@ -252,5 +259,5 @@ def build_index(base_path, extension, fd):
       total_entries += 1
       fd.write(line)
   fd.flush()
-  log.info("[IndexSearcher] index rebuild of \"%s\" took %.6f seconds (%d entries)" % (base_path, time.time() - t, total_entries))
+  msg_setter("[IndexSearcher] index rebuild of \"%s\" took" % base_path)
   return None

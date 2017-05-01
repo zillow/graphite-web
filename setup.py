@@ -7,6 +7,7 @@ import ConfigParser
 
 from glob import glob
 from collections import defaultdict
+from setuptools import find_packages
 
 try:
     from io import BytesIO
@@ -69,34 +70,19 @@ examples = [ ('examples', glob('examples/example-*')) ]
 try:
     setup(
       name='graphite-web',
-      version='0.10.0-rc1',
+      version='1.0.0-pre1',
       url='http://graphiteapp.org/',
       author='Chris Davis',
       author_email='chrismd@gmail.com',
       license='Apache Software License 2.0',
       description='Enterprise scalable realtime graphing',
       package_dir={'' : 'webapp'},
-      packages=[
-        'graphite',
-        'graphite.account',
-        'graphite.browser',
-        'graphite.composer',
-        'graphite.dashboard',
-        'graphite.events',
-        'graphite.finders',
-        'graphite.metrics',
-        'graphite.render',
-        'graphite.url_shortener',
-        'graphite.version',
-        'graphite.whitelist',
-        'graphite.zon',
-        'graphite.cache_metrics',
-      ],
+      packages=find_packages(where='webapp'),
       package_data={'graphite' :
         ['templates/*', 'local_settings.py.example']},
       scripts=glob('bin/*'),
       data_files=webapp_content.items() + storage_dirs + conf_files + examples,
-      install_requires=['Django==1.9', 'django-tagging==0.4.3', 'pytz', 'pyparsing==1.5.7', 'cairocffi'],
+      install_requires=['Django>=1.9,<1.9.99', 'django-tagging==0.4.3', 'pytz', 'pyparsing', 'cairocffi', 'urllib3'],
       classifiers=[
           'Intended Audience :: Developers',
           'Natural Language :: English',

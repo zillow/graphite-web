@@ -78,7 +78,7 @@ CONF_DIR
 
 STORAGE_DIR
   `Default: GRAPHITE_ROOT/storage`
-  The base directory from which WHISPER_DIR, RRD_DIR, LOG_DIR, and INDEX_FILE default paths are referenced.
+  The base directory from which WHISPER_DIR, RRD_DIR, CERES_DIR, LOG_DIR, and INDEX_FILE default paths are referenced.
 
 STATIC_ROOT
   `Default: See below`
@@ -112,13 +112,17 @@ WHISPER_DIR
   `Default: /opt/graphite/storage/whisper`
   The location of Whisper data files.
 
+CERES_DIR
+  `Default: /opt/graphite/storage/ceres`
+  The location of Ceres data files.
+
 RRD_DIR
   `Default: /opt/graphite/storage/rrd`
   The location of RRD data files.
 
 STANDARD_DIRS
   `Default: [WHISPER_DIR, RRD_DIR]`
-  The list of directories searched for data files. By default, this is the value of WHISPER_DIR and RRD_DIR (if rrd support is detected). If this setting is defined, the WHISPER_DIR and RRD_DIR settings have no effect.
+  The list of directories searched for data files. By default, this is the value of WHISPER_DIR and RRD_DIR (if rrd support is detected). If this setting is defined, the WHISPER_DIR, CERES_DIR, and RRD_DIR settings have no effect.
 
 LOG_DIR
   `Default: STORAGE_DIR/log/webapp`
@@ -289,7 +293,7 @@ The following configures the Django database settings. Graphite uses the databas
 See the `Django documentation <https://docs.djangoproject.com/en/dev/ref/settings/#databases>`_ for full documentation of the DATABASES setting.
 
 .. note ::
-  Remember, setting up a new database requires running ``PYTHONPATH=$GRAPHITE_ROOT/webapp django-admin.py syncdb --settings=graphite.settings`` to create the initial schema.
+  Remember, setting up a new database requires running ``PYTHONPATH=$GRAPHITE_ROOT/webapp django-admin.py migrate --settings=graphite.settings --run-syncdb`` to create the initial schema.
 
 .. note ::
   If you are using a custom database backend (other than SQLite) you must first create a $GRAPHITE_ROOT/webapp/graphite/local_settings.py file that overrides the database related settings from settings.py. Use $GRAPHITE_ROOT/webapp/graphite/local_settings.py.example as a template.
