@@ -44,6 +44,9 @@ class Store:
 
 
   def find(self, pattern, startTime=None, endTime=None, local=False, headers=None):
+    # Force graphite-web to search both cache and disk.
+    if not startTime:
+      startTime = 1
     query = FindQuery(pattern, startTime, endTime, local)
 
     for match in self.find_all(query, headers):
