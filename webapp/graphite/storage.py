@@ -46,7 +46,7 @@ class Store:
   def find(self, pattern, startTime=None, endTime=None, local=False, headers=None):
     # Force graphite-web to search both cache and disk.
     if not startTime:
-      startTime = 1
+      startTime = 0
     query = FindQuery(pattern, startTime, endTime, local)
 
     for match in self.find_all(query, headers):
@@ -123,7 +123,7 @@ class Store:
 
     # That means we should search all matched nodes.
     # it would merge nodes with new metrics that only exists in carbon-cache
-    if query.startTime == 1:
+    if query.startTime == 0:
       # merge any new metric node that only exists in carbon-cache
       for name, node in nodes_with_incomplete_result.iteritems():
         if name not in nodes_by_path:
