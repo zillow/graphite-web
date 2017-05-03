@@ -31,6 +31,8 @@ class CarbonCacheFinder:
             # For example,
             # [(metric1, False), (metric2, True)]
             metrics = CarbonLink.expand_query(metric)
+            # dedup, because of BranchNodes
+            metrics = list(set(metrics))
             # check all metrics in same valid query range
             prechecks = [CarbonLink.precheck(m, query.startTime) for m, is_leaf in metrics]
             exists = all((exist for exist, partial_exist in prechecks))
