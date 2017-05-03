@@ -46,7 +46,7 @@ class Store:
   def find(self, pattern, startTime=None, endTime=None, local=False, headers=None):
     # Force graphite-web to search both cache and disk.
     if not startTime:
-      startTime = 1
+      startTime = 0
     query = FindQuery(pattern, startTime, endTime, local)
 
     for match in self.find_all(query, headers):
@@ -71,7 +71,12 @@ class Store:
     # DO NOT hit disk. It helps us reduce iowait.
     # Please use the right version of carbon-cache.
     found_in_cache = False
-    for leaf_node in self.carbon_cache_finder.find_nodes(query):
+
+    # Let's cache nodes with incomplete results, in case we need it and
+    # don't have to query carbon-cache again.
+    nodes_with_incomplete_result = {}
+
+    for leaf_node in self.carbon_cache_finder.find_nodes(query, nodes_with_incomplete_result):
       yield leaf_node
       found_in_cache = True
 
@@ -116,6 +121,14 @@ class Store:
         for node in nodes:
           nodes_by_path[node.path].append(node)
 
+    # That means we should search all matched nodes.
+    # it would merge nodes with new metrics that only exists in carbon-cache
+    if query.startTime == 0:
+      # merge any new metric node that only exists in carbon-cache
+      for name, node in nodes_with_incomplete_result.iteritems():
+        if name not in nodes_by_path:
+          nodes_by_path[name].append(node)
+
     log.info("Got all find results in %fs" % (time.time() - start))
 
     # Search Carbon Cache if nodes_by_path is empty
@@ -129,11 +142,10 @@ class Store:
     # because carbon-cache doesn't have enough data. However, if we reach
     # this point, that means we should return all we have in carbon cache.
     if not nodes_by_path:
-      query.startTime = None
-      for leaf_node in self.carbon_cache_finder.find_nodes(query):
+      for name, node in nodes_with_incomplete_result.iteritems():
         # it only exists one value
-        yield leaf_node
-        return
+        yield node
+      return
 
     # Reduce matching nodes for each path to a minimal set
     found_branch_nodes = set()
