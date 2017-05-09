@@ -13,7 +13,10 @@ from graphite.storage import Store, FindQuery, get_finder
 import ceres
 import whisper
 
+
+
 class FinderTest(TestCase):
+
     def test_custom_finder(self):
         store = Store(finders=[get_finder('tests.test_finders.DummyFinder')])
         nodes = list(store.find("foo"))

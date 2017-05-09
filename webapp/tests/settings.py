@@ -50,3 +50,5 @@ STANDARD_DIRS = [WHISPER_DIR]
 INDEX_FILE = os.path.join(TEMP_GRAPHITE_DIR, 'index')
 
 URL_PREFIX = '/graphite'
+
+CARBON_CACHE_FINDER = 'tests.fixtures.EmptyFinder'
