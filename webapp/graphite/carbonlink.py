@@ -95,7 +95,13 @@ class CarbonLinkPool:
     request = dict(type='cache-query-precheck', metric=metric, timestamp=timestamp)
     results = self.send_request(request)
     log.cache("CarbonLink cache-query-precheck request for %s" % (metric))
-    return results["exists"]
+    return (results["exists"], results["partial_exists"])
+
+  def expand_query(self, metric):
+    request = dict(type='cache-query-expand-wildcards', metric=metric)
+    results = self.send_request(request)
+    log.cache("CarbonLink cache-query-expand-wildcards request for %s" % (metric))
+    return results["queries"]
 
   def get_metadata(self, metric, key):
     request = dict(type='get-metadata', metric=metric, key=key)
@@ -148,15 +154,20 @@ class CarbonLinkPool:
     return result
 
   def _is_all_request(self, request):
+    return self._is_carbon_request(request) or self._is_wildcard_request(request)
+
+  def _is_carbon_request(self, request):
     return request['metric'].startswith(settings.CARBON_METRIC_PREFIX) and (request['type'] not in ['get-storageschema', 'cache-query-precheck'])
+
+  def _is_wildcard_request(self, request):
+    return request['type'] == 'cache-query-expand-wildcards'
 
   def send_request_to_all(self, request):
     metric = request['metric']
     serialized_request = pickle.dumps(request, protocol=-1)
     len_prefix = struct.pack("!L", len(serialized_request))
     request_packet = len_prefix + serialized_request
-    results = {}
-    results.setdefault('datapoints', {})
+    results = self._preprocess_send_all_result(request["type"])
 
     for host in self.hosts:
       conn = self.get_connection(host)
@@ -172,10 +183,24 @@ class CarbonLinkPool:
         if 'error' in result:
           log.cache("Error getting data from cache %s: %s" % (str(host), result['error']))
         else:
-          if len(result['datapoints']) > 1:
-              results['datapoints'].update(result['datapoints'])
+          self._postprocess_send_all_result(request["type"], results, result)
       log.cache("CarbonLink finished receiving %s from %s" % (str(metric), str(host)))
     return results
+
+  def _preprocess_send_all_result(self, rqst_type):
+    results = {}
+    if rqst_type == "cache-query-expand-wildcards":
+      results.setdefault("queries", [])
+    else:
+      results.setdefault('datapoints', {})
+    return results
+
+  def _postprocess_send_all_result(self, rqst_type, results, result):
+    if rqst_type == "cache-query-expand-wildcards":
+      results["queries"] += result.get("queries")
+    elif rqst_type == "cache-query":
+      if len(result['datapoints']) > 1:
+        results['datapoints'].update(result['datapoints'])
 
   def recv_response(self, conn):
     len_prefix = recv_exactly(conn, 4)

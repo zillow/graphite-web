@@ -1,15 +1,22 @@
+import gzip
 import os
 from os.path import join, dirname, isdir
 import random
 import shutil
 import time
 
-from django.test import TestCase
+try:
+    from unittest.mock import patch
+except ImportError:
+    from mock import patch
+
+from .base import TestCase
 from django.conf import settings
 
 from graphite.intervals import Interval, IntervalSet
 from graphite.node import LeafNode, BranchNode
 from graphite.storage import Store, FindQuery, get_finder
+from graphite.finders.standard import scandir
 import ceres
 import whisper
 
@@ -60,16 +67,21 @@ class DummyFinder(object):
 
 
 class StandardFinderTest(TestCase):
-    _listdir_counter = 0
-    _original_listdir = os.listdir
 
     test_dir = settings.WHISPER_DIR
 
-    def create_whisper(self, path):
+    def scandir_mock(d):
+        return scandir(d)
+
+    def create_whisper(self, path, gz=False):
         path = join(self.test_dir, path)
         if not isdir(dirname(path)):
             os.makedirs(dirname(path))
         whisper.create(path, [(1, 60)])
+        if gz:
+          with open(path, 'rb') as f_in, gzip.open("%s.gz" % path, 'wb') as f_out:
+             shutil.copyfileobj(f_in, f_out)
+          os.remove(path)
 
     def wipe_whisper(self):
         try:
@@ -80,45 +92,98 @@ class StandardFinderTest(TestCase):
         if not isdir(self.test_dir):
             os.makedirs(self.test_dir)
 
-    def test_standard_finder(self):
-        def listdir_mock(d):
-            self._listdir_counter += 1
-            return self._original_listdir(d)
-
+    @patch('graphite.finders.standard.scandir', wraps=scandir_mock)
+    def test_standard_finder(self,scandir_mock):
         try:
-            os.listdir = listdir_mock
             self.create_whisper('foo.wsp')
             self.create_whisper(join('foo', 'bar', 'baz.wsp'))
             self.create_whisper(join('bar', 'baz', 'foo.wsp'))
             finder = get_finder('graphite.finders.standard.StandardFinder')
 
-            self._listdir_counter = 0
+            scandir_mock.call_count = 0
             nodes = finder.find_nodes(FindQuery('foo', None, None))
             self.assertEqual(len(list(nodes)), 2)
-            self.assertEqual(self._listdir_counter, 0)
+            self.assertEqual(scandir_mock.call_count, 0)
 
-            self._listdir_counter = 0
+            scandir_mock.call_count = 0
             nodes = finder.find_nodes(FindQuery('foo.bar.baz', None, None))
             self.assertEqual(len(list(nodes)), 1)
-            self.assertEqual(self._listdir_counter, 0)
+            self.assertEqual(scandir_mock.call_count, 0)
 
-            self._listdir_counter = 0
+            scandir_mock.call_count = 0
             nodes = finder.find_nodes(FindQuery('*.ba?.{baz,foo}', None, None))
             self.assertEqual(len(list(nodes)), 2)
-            self.assertEqual(self._listdir_counter, 5)
+            self.assertEqual(scandir_mock.call_count, 5)
 
-            self._listdir_counter = 0
+            scandir_mock.call_count = 0
             nodes = finder.find_nodes(FindQuery('{foo,bar}.{baz,bar}.{baz,foo}', None, None))
             self.assertEqual(len(list(nodes)), 2)
-            self.assertEqual(self._listdir_counter, 5)
+            self.assertEqual(scandir_mock.call_count, 5)
 
-            self._listdir_counter = 0
+            scandir_mock.call_count = 0
+            nodes = finder.find_nodes(FindQuery('{foo}.bar.*', None, None))
+            self.assertEqual(len(list(nodes)), 1)
+            self.assertEqual(scandir_mock.call_count, 2)
+
+            scandir_mock.call_count = 0
             nodes = finder.find_nodes(FindQuery('foo.{ba{r,z},baz}.baz', None, None))
             self.assertEqual(len(list(nodes)), 1)
-            self.assertEqual(self._listdir_counter, 1)
+            self.assertEqual(scandir_mock.call_count, 1)
+
+            scandir_mock.call_count = 0
+            nodes = finder.find_nodes(FindQuery('{foo,garbage}.bar.baz', None, None))
+            self.assertEqual(len(list(nodes)), 1)
+            self.assertEqual(scandir_mock.call_count, 1)
+
+            scandir_mock.call_count = 0
+            nodes = finder.find_nodes(FindQuery('{fo{o}}.bar.baz', None, None))
+            self.assertEqual(len(list(nodes)), 1)
+            self.assertEqual(scandir_mock.call_count, 1)
+
+            scandir_mock.call_count = 0
+            nodes = finder.find_nodes(FindQuery('foo{}.bar.baz', None, None))
+            self.assertEqual(len(list(nodes)), 1)
+            self.assertEqual(scandir_mock.call_count, 1)
+
+            scandir_mock.call_count = 0
+            nodes = finder.find_nodes(FindQuery('{fo,ba}{o}.bar.baz', None, None))
+            self.assertEqual(len(list(nodes)), 1)
+            self.assertEqual(scandir_mock.call_count, 1)
+
+            scandir_mock.call_count = 0
+            nodes = finder.find_nodes(FindQuery('{fo,ba}{o,o}.bar.baz', None, None))
+            self.assertEqual(len(list(nodes)), 1)
+            self.assertEqual(scandir_mock.call_count, 1)
+
+            scandir_mock.call_count = 0
+            nodes = finder.find_nodes(FindQuery('{fo,ba}{o,z}.bar.baz', None, None))
+            self.assertEqual(len(list(nodes)), 1)
+            self.assertEqual(scandir_mock.call_count, 1)
 
         finally:
-            os.listdir = self._original_listdir
+            scandir_mock.call_count = 0
+            self.wipe_whisper()
+
+    @patch('graphite.finders.standard.scandir', wraps=scandir_mock)
+    def test_standard_finder_gzipped_whisper(self, scandir_mock):
+        try:
+            self.create_whisper('foo.wsp', True)
+            self.create_whisper(join('foo', 'bar', 'baz.wsp'), True)
+            self.create_whisper(join('bar', 'baz', 'foo.wsp'))
+            finder = get_finder('graphite.finders.standard.StandardFinder')
+
+            scandir_mock.call_count = 0
+            nodes = finder.find_nodes(FindQuery('foo', None, None))
+            self.assertEqual(len(list(nodes)), 2)
+            self.assertEqual(scandir_mock.call_count, 0)
+
+            scandir_mock.call_count = 0
+            nodes = finder.find_nodes(FindQuery('foo{}.bar.baz', None, None))
+            self.assertEqual(len(list(nodes)), 1)
+            self.assertEqual(scandir_mock.call_count, 1)
+
+        finally:
+            scandir_mock.call_count = 0
             self.wipe_whisper()
 
     def test_globstar(self):
@@ -215,12 +280,12 @@ class CeresFinderTest(TestCase):
             self._listdir_counter = 0
             nodes = finder.find_nodes(FindQuery('foo', None, None))
             self.assertEqual(len(list(nodes)), 1)
-            self.assertEqual(self._listdir_counter, 2)
+            self.assertEqual(self._listdir_counter, 1)
 
             self._listdir_counter = 0
             nodes = finder.find_nodes(FindQuery('foo.bar.baz', None, None))
             self.assertEqual(len(list(nodes)), 1)
-            self.assertEqual(self._listdir_counter, 2)
+            self.assertEqual(self._listdir_counter, 1)
 
             # No data in the expected time period
             self._listdir_counter = 0
@@ -236,7 +301,7 @@ class CeresFinderTest(TestCase):
             self._listdir_counter = 0
             nodes = finder.find_nodes(FindQuery('*.ba?.{baz,foo}', None, None))
             self.assertEqual(len(list(nodes)), 2)
-            self.assertEqual(self._listdir_counter, 10)
+            self.assertEqual(self._listdir_counter, 8)
 
             # Search for something that isn't valid Ceres content
             fh = open(join(test_dir, 'foo', 'blah'), 'wb')

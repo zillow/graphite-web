@@ -1,4 +1,7 @@
 import time
+import random
+import Queue
+from collections import defaultdict
 
 try:
   from importlib import import_module
@@ -7,11 +10,13 @@ except ImportError:  # python < 2.7 compatibility
 
 from django.conf import settings
 
+from graphite.logger import log
 from graphite.util import is_local_interface, is_pattern
 from graphite.remote_storage import RemoteStore
 from graphite.node import LeafNode
 from graphite.intervals import Interval, IntervalSet
 from graphite.readers import MultiReader
+from graphite.worker_pool.pool import get_pool
 
 
 def get_finder(finder_path):
@@ -38,44 +43,93 @@ class Store:
     self.remote_stores = [ RemoteStore(host) for host in remote_hosts ]
 
 
-  def find(self, pattern, startTime=None, endTime=None, local=False):
-    query = FindQuery(pattern, startTime, endTime)
+  def find(self, pattern, startTime=None, endTime=None, local=False, headers=None):
+    # Force graphite-web to search both cache and disk.
+    if not startTime:
+      startTime = 0
+    query = FindQuery(pattern, startTime, endTime, local)
+
+    for match in self.find_all(query, headers):
+      yield match
+
+
+  def find_all(self, query, headers=None):
+    start = time.time()
+    result_queue = Queue.Queue()
+    jobs = []
 
     # Start remote searches
-    if not local:
-      remote_requests = [ r.find(query) for r in self.remote_stores if r.available ]
-
-    matching_nodes = set()
+    if not query.local:
+      random.shuffle(self.remote_stores)
+      jobs.extend([
+        (store.find, query, headers)
+        for store in self.remote_stores if store.available
+      ])
 
     # single metric query, let's hit carbon-cache first,
     # if we can fetch all data from carbon-cache, then
     # DO NOT hit disk. It helps us reduce iowait.
     # Please use the right version of carbon-cache.
-    # For wildcard query, carbon-cache returns None certainly...
-    for leaf_node in self.carbon_cache_finder.find_nodes(query):
+    found_in_cache = False
+
+    # Let's cache nodes with incomplete results, in case we need it and
+    # don't have to query carbon-cache again.
+    nodes_with_incomplete_result = {}
+
+    for leaf_node in self.carbon_cache_finder.find_nodes(query, nodes_with_incomplete_result):
       yield leaf_node
+      found_in_cache = True
+
+    if found_in_cache and query.startTime != 0::
       return
 
-    # Search locally
+    # Start local searches
     for finder in self.finders:
-      for node in finder.find_nodes(query):
-        #log.info("find() :: local :: %s" % node)
-        matching_nodes.add(node)
+      jobs.append((finder.find_nodes, query))
 
-    # Gather remote search results
-    if not local:
-      for request in remote_requests:
-        for node in request.get_results():
-          #log.info("find() :: remote :: %s from %s" % (node,request.store.host))
-          matching_nodes.add(node)
+    if settings.USE_WORKER_POOL:
+      return_result = lambda x: result_queue.put(x)
+      for job in jobs:
+        get_pool().apply_async(func=job[0], args=job[1:], callback=return_result)
+    else:
+      for job in jobs:
+        result_queue.put(job[0](*job[1:]))
 
     # Group matching nodes by their path
-    nodes_by_path = {}
-    for node in matching_nodes:
-      if node.path not in nodes_by_path:
-        nodes_by_path[node.path] = []
+    nodes_by_path = defaultdict(list)
 
-      nodes_by_path[node.path].append(node)
+    deadline = start + settings.REMOTE_FIND_TIMEOUT
+    result_cnt = 0
+
+    while result_cnt < len(jobs):
+      wait_time = deadline - time.time()
+
+      try:
+        nodes = result_queue.get(True, wait_time)
+
+      # ValueError could happen if due to really unlucky timing wait_time is negative
+      except (Queue.Empty, ValueError):
+        if time.time() > deadline:
+          log.info("Timed out in find_all after %fs" % (settings.REMOTE_FIND_TIMEOUT))
+          break
+        else:
+          continue
+
+      log.info("Got a find result after %fs" % (time.time() - start))
+      result_cnt += 1
+      if nodes:
+        for node in nodes:
+          nodes_by_path[node.path].append(node)
+
+    # That means we should search all matched nodes.
+    # it would merge nodes with new metrics that only exists in carbon-cache
+    if query.startTime == 0:
+      # merge any new metric node that only exists in carbon-cache
+      for name, node in nodes_with_incomplete_result.iteritems():
+        if name not in nodes_by_path:
+          nodes_by_path[name].append(node)
+
+    log.info("Got all find results in %fs" % (time.time() - start))
 
     # Search Carbon Cache if nodes_by_path is empty
     #
@@ -88,16 +142,18 @@ class Store:
     # because carbon-cache doesn't have enough data. However, if we reach
     # this point, that means we should return all we have in carbon cache.
     if not nodes_by_path:
-      query.startTime = None
-      for leaf_node in self.carbon_cache_finder.find_nodes(query):
+      for name, node in nodes_with_incomplete_result.iteritems():
         # it only exists one value
-        yield leaf_node
-        return
+        yield node
+      return
 
     # Reduce matching nodes for each path to a minimal set
     found_branch_nodes = set()
 
-    for path, nodes in nodes_by_path.iteritems():
+    items = list(nodes_by_path.iteritems())
+    random.shuffle(items)
+
+    for path, nodes in items:
       leaf_nodes = []
 
       # First we dispense with the BranchNodes
@@ -109,6 +165,11 @@ class Store:
           found_branch_nodes.add(node.path)
 
       if not leaf_nodes:
+        continue
+
+      # Fast-path when there is a single node.
+      if len(leaf_nodes) == 1:
+        yield leaf_nodes[0]
         continue
 
       # Calculate best minimal node set
@@ -161,6 +222,8 @@ class Store:
         # We include the most likely node if the gap is within tolerance.
         if not minimal_node_set:
           def distance_to_requested_interval(node):
+            if not node.intervals:
+              return float('inf')
             latest = sorted(node.intervals, key=lambda i: i.end)[-1]
             distance = query.interval.start - latest.end
             return distance if distance >= 0 else float('inf')
@@ -176,15 +239,15 @@ class Store:
         yield LeafNode(path, reader)
 
 
-
 class FindQuery:
-  def __init__(self, pattern, startTime, endTime):
+  def __init__(self, pattern, startTime, endTime, local=False):
     self.pattern = pattern
     self.startTime = startTime
     self.endTime = endTime
     self.isExact = is_pattern(pattern)
     self.interval = Interval(float('-inf') if startTime is None else startTime,
                              float('inf') if endTime is None else endTime)
+    self.local = local
 
 
   def __repr__(self):
@@ -199,5 +262,6 @@ class FindQuery:
       endString = time.ctime(self.endTime)
 
     return '<FindQuery: %s from %s until %s>' % (self.pattern, startString, endString)
+
 
 STORE = Store()
