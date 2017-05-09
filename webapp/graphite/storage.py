@@ -80,7 +80,7 @@ class Store:
       yield leaf_node
       found_in_cache = True
 
-    if found_in_cache and query.startTime != 0::
+    if found_in_cache and query.startTime != 0:
       return
 
     # Start local searches
