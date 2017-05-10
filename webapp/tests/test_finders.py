@@ -4,6 +4,7 @@ from os.path import join, dirname, isdir
 import random
 import shutil
 import time
+import tempfile
 
 try:
     from unittest.mock import patch
@@ -16,10 +17,33 @@ from django.conf import settings
 from graphite.intervals import Interval, IntervalSet
 from graphite.node import LeafNode, BranchNode
 from graphite.storage import Store, FindQuery, get_finder
+from graphite.finders import get_real_metric_path
 from graphite.finders.standard import scandir
 import ceres
 import whisper
 
+
+class MetricPathTest(TestCase):
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.tmp_2 = tempfile.mkdtemp()
+
+    def test_get_real_metric_path(self):
+        real_wsp_file = os.path.join(self.tmp, "real.wsp")
+        fake_wsp_file = os.path.join(self.tmp_2, "fake.wsp")
+        relative_wsp_path = "fake.wsp"
+        with open(real_wsp_file, "w+") as fh:
+            fh.write("")
+        os.symlink(fake_wsp_file, fake_wsp_file)
+        assert get_real_metric_path(real_wsp_file, relative_wsp_path) == "real"
+        # absolute_path = "/opt/zillow/app_data/zillow-graphite-storage-s1/storage/whisper/zdc/metrics/monitor_live/ztick/unknown_version/004/ztick/tick.wsp"
+        # real_fs_path = "/vol/storage/app_data/zillow-graphite-storage-s1/storage/whisper/zdc/metrics/monitor_live/ztick/unknown_version/004/ztick/tick.wsp"
+        # metric_path = "zdc.metrics.monitor_live.ztick.unknown_version.004.ztick.tick"
+        # get_real_metric_path(
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
 
 
 class FinderTest(TestCase):
@@ -38,6 +62,7 @@ class FinderTest(TestCase):
         time_info, series = node.fetch(100, 200)
         self.assertEqual(time_info, (100, 200, 10))
         self.assertEqual(len(series), 10)
+
 
 class DummyReader(object):
     __slots__ = ('path',)

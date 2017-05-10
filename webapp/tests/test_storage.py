@@ -40,3 +40,10 @@ class StorageTest(TestCase):
         # Restore original settings
         settings.CLUSTER_SERVERS = old_cluster_servers
         settings.REMOTE_EXCLUDE_LOCAL = old_remote_exclude_local
+
+    def test_merge_partial_cache_results(self):
+        """
+        if some of the data is in the cache, and some is in whisper,
+        merge the results.
+        """
+        pass
