@@ -39,7 +39,7 @@ class StandardFinder:
 
         relative_path = absolute_path[ len(root_dir): ].lstrip('/')
         metric_path = fs_to_metric(relative_path)
-        real_metric_path = get_real_metric_path(absolute_path, metric_path)
+        real_metric_path = get_real_metric_path(absolute_path, relative_path)
 
         metric_path_parts = metric_path.split('.')
         for field_index in find_escaped_pattern_fields(query.pattern):

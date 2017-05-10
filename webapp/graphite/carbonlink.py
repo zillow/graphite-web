@@ -144,7 +144,7 @@ class CarbonLinkPool:
       result = self.recv_response(conn)
     except Exception,e:
       self.last_failure[host] = time.time()
-      log.cache("Exception getting data from cache %s: %s" % (str(host), e))
+      log.exception("Exception getting data from cache %s: %s" % (str(host), e))
     else:
       self.connections[host].add(conn)
       if 'error' in result:

@@ -16,6 +16,8 @@ docs/_build
 *.iml
 storage
 .DS_Store
+.coverage
+coverage.xml
 webapp/coverage.xml
 webapp/.coverage
 webapp/static

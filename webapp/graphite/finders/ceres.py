@@ -29,7 +29,8 @@ class CeresFinder:
           ceres_node = self.tree.getNode(metric_path)
 
           if ceres_node.hasDataForInterval(query.startTime, query.endTime):
-            real_metric_path = get_real_metric_path(fs_path, metric_path)
+            relative_path = fs_path[len(self.directory):].lstrip('/')
+            real_metric_path = get_real_metric_path(fs_path, relative_path)
             reader = CeresReader(ceres_node, real_metric_path)
             yield LeafNode(metric_path, reader)
 

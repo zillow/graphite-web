@@ -195,7 +195,6 @@ class WhisperReader(object):
 
     meta_info = whisper.info(self.fs_path)
     aggregation_method = meta_info['aggregationMethod']
-    lowest_step = min([i['secondsPerPoint'] for i in meta_info['archives']])
     # Merge in data from carbon's cache
     cached_datapoints = []
     try:
@@ -271,7 +270,7 @@ class CarbonCacheReader(object):
     if not target_arch:
       return None
     step = target_arch[0]
-    return step    
+    return step
 
   def _query_and_format_cache_data(self, from_time, until_time, step):
     cached_results = CarbonLink.query(self.metric)
