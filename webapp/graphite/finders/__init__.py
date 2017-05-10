@@ -8,7 +8,6 @@ def get_real_metric_path(absolute_path, relative_fs_path):
   # Support symbolic links (real_metric_path ensures proper cache queries)
   real_fs_path = os.path.realpath(absolute_path)
   if absolute_path != real_fs_path:
-    # relative_fs_path = metric_path.replace('.', os.sep)
     base_fs_path = os.path.dirname(absolute_path[:-len(relative_fs_path)])
     real_base_fs_path = os.path.realpath(base_fs_path)
     relative_real_fs_path = real_fs_path[len(real_base_fs_path):].lstrip('/')

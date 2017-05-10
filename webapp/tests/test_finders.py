@@ -37,10 +37,6 @@ class MetricPathTest(TestCase):
             fh.write("")
         os.symlink(fake_wsp_file, fake_wsp_file)
         assert get_real_metric_path(real_wsp_file, relative_wsp_path) == "real"
-        # absolute_path = "/opt/zillow/app_data/zillow-graphite-storage-s1/storage/whisper/zdc/metrics/monitor_live/ztick/unknown_version/004/ztick/tick.wsp"
-        # real_fs_path = "/vol/storage/app_data/zillow-graphite-storage-s1/storage/whisper/zdc/metrics/monitor_live/ztick/unknown_version/004/ztick/tick.wsp"
-        # metric_path = "zdc.metrics.monitor_live.ztick.unknown_version.004.ztick.tick"
-        # get_real_metric_path(
 
     def tearDown(self):
         shutil.rmtree(self.tmp)
