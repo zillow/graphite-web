@@ -285,6 +285,7 @@ class RenderTest(TestCase):
         })
         data = json.loads(response.content)[0]
         self.assertEqual(data['target'], 'nameOfSeries')
+        self.assertEqual(data['input_target'], 'template(time($1),"nameOfSeries")')
 
         url = reverse('graphite.render.views.renderView')
         response = self.client.get(url, {
@@ -295,6 +296,7 @@ class RenderTest(TestCase):
         })
         data = json.loads(response.content)[0]
         self.assertEqual(data['target'], 'nameOfSeries')
+        self.assertEqual(data['input_target'], 'template(time($name),name="nameOfSeries")')
 
         url = reverse('graphite.render.views.renderView')
         response = self.client.get(url, {
@@ -306,6 +308,21 @@ class RenderTest(TestCase):
         })
         data = json.loads(response.content)[0]
         self.assertEqual(data['target'], 'nameOfSeries')
+        self.assertEqual(data['input_target'], 'template(time($name))')
+
+
+    def test_render_input_target(self):
+        url = reverse('graphite.render.views.renderView')
+        response = self.client.get(url, {
+                 'target': 'constantLine(12)',
+                 'format': 'json',
+                 'from': '07:01_20140226',
+                 'until': '08:01_20140226',
+        })
+        data = json.loads(response.content)[0]
+        self.assertEqual(data['target'], '12')
+        self.assertEqual(data['input_target'], 'constantLine(12)')
+
 
     def test_template_pathExpression_variables(self):
         self.create_whisper_hosts()
@@ -318,6 +335,7 @@ class RenderTest(TestCase):
         })
         data = json.loads(response.content)[0]
         self.assertEqual(data['target'], 'sumSeries(hosts.worker1.cpu)')
+        self.assertEqual(data['input_target'], 'template(sumSeries(hosts.$1.cpu),"worker1")')
 
         response = self.client.get(url, {
                  'target': 'template(sumSeries(hosts.$1.cpu),"worker1")',
@@ -326,6 +344,7 @@ class RenderTest(TestCase):
         })
         data = json.loads(response.content)[0]
         self.assertEqual(data['target'], 'sumSeries(hosts.worker*.cpu)')
+        self.assertEqual(data['input_target'], 'template(sumSeries(hosts.$1.cpu),"worker1")')
 
         response = self.client.get(url, {
                  'target': 'template(sumSeries(hosts.$hostname.cpu))',
@@ -334,6 +353,8 @@ class RenderTest(TestCase):
         })
         data = json.loads(response.content)[0]
         self.assertEqual(data['target'], 'sumSeries(hosts.worker*.cpu)')
+        self.assertEqual(data['input_target'], 'template(sumSeries(hosts.$hostname.cpu))')
+
 
 class ConsistentHashRingTest(TestCase):
     def test_chr_compute_ring_position(self):
