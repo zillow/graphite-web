@@ -165,7 +165,12 @@ def find_view(request):
 
   elif format == 'completer':
     results = []
+    found = set()
     for node in matches:
+      unique_key = "{name}|{is_leaf}".format(name=node.name, is_leaf=node.is_leaf)
+      if unique_key in found:
+        continue
+      found.add(unique_key)
       node_info = dict(path=node.path, name=node.name, is_leaf=str(int(node.is_leaf)))
       if not node.is_leaf:
         node_info['path'] += '.'

@@ -2005,7 +2005,7 @@ function graphClicked(graphView, graphIndex, element, evt) {
         }
         Ext.Ajax.request({
           method: 'GET',
-          url: document.body.dataset.baseUrl + 's' + record.data.url,
+          url: document.body.dataset.baseUrl + 's' + record.modified.url,
           callback: showUrl,
         });
       }
