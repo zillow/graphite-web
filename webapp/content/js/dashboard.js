@@ -2003,9 +2003,10 @@ function graphClicked(graphView, graphIndex, element, evt) {
               win.show();
            }
         }
+        var url = document.body.dataset.baseUrl + 's/render?' + Ext.urlEncode(record.data.params);
         Ext.Ajax.request({
           method: 'GET',
-          url: document.body.dataset.baseUrl + 's' + record.modified.url,
+          url: url,
           callback: showUrl,
         });
       }
