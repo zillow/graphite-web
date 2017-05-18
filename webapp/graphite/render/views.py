@@ -22,6 +22,7 @@ from urllib import urlencode
 from urlparse import urlsplit, urlunsplit
 from cgi import parse_qs
 from cStringIO import StringIO
+from collections import defaultdict
 
 try:
   import cPickle as pickle
@@ -108,7 +109,7 @@ def renderView(request):
     else:
       cachedData = None
 
-    new_old_target_map = {}
+    new_old_target_map = defaultdict(str)
 
     if cachedData is not None:
       requestContext['data'] = data = cachedData
