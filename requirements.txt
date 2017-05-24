@@ -47,7 +47,8 @@ pytz
 pyparsing==2.2.0
 cairocffi
 git+git://github.com/graphite-project/whisper.git#egg=whisper
-git+git://github.com/graphite-project/ceres.git#egg=ceres
+# Ceres is optional
+# git+git://github.com/graphite-project/ceres.git#egg=ceres
 whitenoise
 scandir
 urllib3

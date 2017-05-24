@@ -996,6 +996,45 @@ class FunctionsTest(TestCase):
 
         self.assertEqual(result, expectedResult)
 
+    def test_divideSeriesLists(self):
+        seriesList1 = self._gen_series_list_with_data(
+            key=[
+                'collectd.test-db1.load.value1',
+                'collectd.test-db2.load.value1'
+            ],
+            end=1,
+            data=[
+                [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20],
+                [None,2,None,4,None,6,None,8,None,10,None,12,None,14,None,16,None,18,None,20],
+            ]
+        )
+
+        seriesList2 = self._gen_series_list_with_data(
+            key=[
+                'collectd.test-db1.load.value2',
+                'collectd.test-db2.load.value2'
+            ],
+            end=1,
+            data=[
+                [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20],
+                [None,19,18,None,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1],
+            ]
+        )
+
+        expectedResult = [
+            TimeSeries('divideSeries(collectd.test-db1.load.value1,collectd.test-db1.load.value2)',0,1,1,[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]),
+            TimeSeries('divideSeries(collectd.test-db2.load.value1,collectd.test-db2.load.value2)',0,1,1,[None, 0.11, None, None, None, 0.4, None, 0.62, None, 0.91, None, 1.33, None, 2.0, None, 3.2, None, 6.0, None, 20.0]),
+        ]
+
+        result = functions.divideSeriesLists({}, seriesList1, seriesList2)
+
+        for i, series in enumerate(result):
+          for k, v in enumerate(series):
+            if type(v) is float:
+              series[k] = round(v,2)
+
+        self.assertEqual(result, expectedResult)
+
     def test_multiplySeries_single(self):
         seriesList = [
             TimeSeries('collectd.test-db1.load.value',0,1,1,[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]),
@@ -2073,6 +2112,76 @@ class FunctionsTest(TestCase):
             self.assertTrue(series.name.startswith(substitution),
                     "aliasSub should replace the name with {0}".format(substitution),
             )
+
+    def test_alias_query(self):
+
+        # Create input series
+        seriesList = self._gen_series_list_with_data(
+            key=['chan.pow.1', 'chan.pow.2', 'chan.pow.3'],
+            start=0,
+            end=1,
+            data=[
+                [0, 30], [10, 40], [20, 50]
+            ]
+        )
+
+        # Intermediate lookup series
+        lookupSeries = self._gen_series_list_with_data(
+            key=['chan.freq.1', 'chan.freq.2', 'chan.freq.3'],
+            start=0,
+            end=1,
+            data=[
+                [0, 101], [0, 102], [0, 103]
+            ]
+        )
+
+        # Expected result
+        expectedResult = [
+            TimeSeries("Channel 101 MHz", 0, 1, 1, [0, 30]),
+            TimeSeries("Channel 102 MHz", 0, 1, 1, [10, 40]),
+            TimeSeries("Channel 103 MHz", 0, 1, 1, [20, 50])
+        ]
+
+        # Temporarily replace evaluateTarget() function
+        originalEvaluate = functions.evaluateTarget
+        try:
+
+            # Custom evaluateTarget() function
+            def lookup(context, query):
+                for series in lookupSeries:
+                    if series.name == query:
+                        return [series]
+                return []
+            functions.evaluateTarget = lookup
+
+            # Perform query - this one will not find a matching metric
+            with self.assertRaises(Exception):
+                functions.aliasQuery({}, seriesList, 'chan\.pow\.([0-9]+)', 'chan.fred.\\1', 'Channel %d MHz')
+
+            # Perform query - this one will find a matching metric
+            results = functions.aliasQuery({}, seriesList, 'chan\.pow\.([0-9]+)', 'chan.freq.\\1', 'Channel %d MHz')
+
+            # Check results
+            self.assertEqual(results, expectedResult)
+
+            # Temporarily replace safeLast() function
+            originalSafeLast = functions.safeLast
+            try:
+
+                # Custom safeLast() function
+                def noneSafeLast(x):
+                    return None
+                functions.safeLast = noneSafeLast
+
+                # Perform query - this one will fail to return a current value for the matched metric
+                with self.assertRaises(Exception):
+                    functions.aliasQuery({}, seriesList, 'chan\.pow\.([0-9]+)', 'chan.freq.\\1', 'Channel %d MHz')
+
+            finally:
+                functions.safeLast = originalSafeLast
+
+        finally:
+            functions.evaluateTarget = originalEvaluate
 
     # TODO: Add tests for * globbing and {} matching to this
     def test_alias_by_node(self):

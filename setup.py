@@ -70,7 +70,7 @@ examples = [ ('examples', glob('examples/example-*')) ]
 try:
     setup(
       name='graphite-web',
-      version='1.0.0-pre1',
+      version='1.1.0',
       url='http://graphiteapp.org/',
       author='Chris Davis',
       author_email='chrismd@gmail.com',
@@ -82,7 +82,7 @@ try:
         ['templates/*', 'local_settings.py.example']},
       scripts=glob('bin/*'),
       data_files=webapp_content.items() + storage_dirs + conf_files + examples,
-      install_requires=['Django>=1.9,<1.9.99', 'django-tagging==0.4.3', 'pytz', 'pyparsing', 'cairocffi', 'urllib3'],
+      install_requires=['Django>=1.9,<1.9.99', 'django-tagging==0.4.3', 'pytz', 'pyparsing', 'cairocffi', 'urllib3', 'scandir'],
       classifiers=[
           'Intended Audience :: Developers',
           'Natural Language :: English',

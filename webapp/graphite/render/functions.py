@@ -616,6 +616,41 @@ def asPercent(requestContext, seriesList, total=None):
 
   return resultList
 
+def divideSeriesLists(requestContext, dividendSeriesList, divisorSeriesList):
+  """
+  Iterates over a two lists and divides list1[0] by list2[0], list1[1] by list2[1] and so on.
+  The lists need to be the same length
+  """
+
+  if len(dividendSeriesList) != len(divisorSeriesList):
+    raise ValueError("dividendSeriesList and divisorSeriesList argument must have equal length")
+
+  results = []
+
+  #for dividendSeries in dividendSeriesList:
+  for i in range(0, len(dividendSeriesList)):
+    dividendSeries = dividendSeriesList[i]
+    divisorSeries = divisorSeriesList[i]
+
+    name = "divideSeries(%s,%s)" % (dividendSeries.name, divisorSeries.name)
+    bothSeries = (dividendSeries, divisorSeries)
+    step = reduce(lcm,[s.step for s in bothSeries])
+
+    for s in bothSeries:
+      s.consolidate( step / s.step )
+
+    start = min([s.start for s in bothSeries])
+    end = max([s.end for s in bothSeries])
+    end -= (end - start) % step
+
+    values = ( safeDiv(v1,v2) for v1,v2 in izip(*bothSeries) )
+
+    quotientSeries = TimeSeries(name, start, end, step, values)
+    quotientSeries.pathExpression = name
+    results.append(quotientSeries)
+
+  return results
+
 def divideSeries(requestContext, dividendSeriesList, divisorSeries):
   """
   Takes a dividend metric and a divisor metric and draws the division result.
@@ -1732,6 +1767,29 @@ def aliasSub(requestContext, seriesList, search, replace):
   except AttributeError:
     for series in seriesList:
       series.name = re.sub(search, replace, series.name)
+  return seriesList
+
+def aliasQuery(requestContext, seriesList, search, replace, newName):
+  """
+  Performs a query to alias the metrics in seriesList.
+
+  .. code-block:: none
+
+    &target=aliasQuery(channel.power.*,"channel\.power\.([0-9]+)","channel.frequency.\\1", "Channel %d MHz")
+
+  The series in seriesList will be aliased by first translating the series names using
+  the search & replace parameters, then using the last value of the resulting series
+  to construct the alias using sprintf-style syntax.
+  """
+  for series in seriesList:
+    newQuery = re.sub(search, replace, series.name)
+    newSeriesList = evaluateTarget(requestContext, newQuery)
+    if newSeriesList is None or len(newSeriesList) == 0:
+      raise Exception('No series found with query: ' + newQuery)
+    current = safeLast(newSeriesList[0])
+    if current is None:
+      raise Exception('Cannot get last value of series: ' + newSeriesList[0])
+    series.name = newName % current
   return seriesList
 
 def alias(requestContext, seriesList, newName):
@@ -3530,7 +3588,7 @@ def applyByNode(requestContext, seriesList, nodeNum, templateFunction, newName=N
 
   .. code-block:: none
 
-    applyByNode(stats.counts.haproxy.*.*XX, 3, "asPercent(%.2XX, sumSeries(%.*XX))", "%.pct_5XX")
+    applyByNode(stats.counts.haproxy.*.*XX, 3, "asPercent(%.5XX, sumSeries(%.*XX))", "%.pct_5XX")
 
   The output series would have keys `stats.counts.haproxy.web.pct_5XX` and `stats.counts.haproxy.microservice.pct_5XX`.
   """
@@ -4106,6 +4164,7 @@ SeriesFunctions = {
   'pct': asPercent,
   'diffSeries': diffSeries,
   'divideSeries': divideSeries,
+  'divideSeriesLists': divideSeriesLists,
   'exponentialMovingAverage': exponentialMovingAverage,
 
   # Series Filter functions
@@ -4147,6 +4206,7 @@ SeriesFunctions = {
   'legendValue': legendValue,
   'alias': alias,
   'aliasSub': aliasSub,
+  'aliasQuery': aliasQuery,
   'aliasByNode': aliasByNode,
   'aliasByMetric': aliasByMetric,
   'cactiStyle': cactiStyle,
