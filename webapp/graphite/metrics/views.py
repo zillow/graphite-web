@@ -315,7 +315,7 @@ def tree_json(nodes, base_path, wildcards=False):
 
     found.add(node.name)
     resultNode = {
-      'text' : urllib.unquote_plus(str(node.name)),
+      'text' : str(node.name),
       'id' : base_path + str(node.name),
     }
 
