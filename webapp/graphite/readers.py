@@ -181,9 +181,9 @@ class WhisperReader(object):
     end = max( stat(self.fs_path).st_mtime, start )
     return IntervalSet( [Interval(start, end)] )
 
-  def fetch(self, startTime, endTime):
+  def fetch(self, startTime, endTime, now=None, requestContext=None):
     try:
-      data = whisper.fetch(self.fs_path, startTime, endTime)
+      data = whisper.fetch(self.fs_path, startTime, endTime, now)
     except IOError:
       log.exception("Failed fetch of whisper file '%s'" % self.fs_path)
       return None
