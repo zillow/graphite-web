@@ -36,7 +36,7 @@ class GraphiteLogger:
   def __init__(self):
     self.infoLogger = self._config_logger('info.log',
                                           'info',
-                                          True,
+                                          settings.LOG_INFO,
                                           level = logging.INFO,
                                           )
     self.exceptionLogger = self._config_logger('exception.log',
