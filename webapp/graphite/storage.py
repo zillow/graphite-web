@@ -76,11 +76,13 @@ class Store:
     # don't have to query carbon-cache again.
     nodes_with_incomplete_result = {}
 
-    for leaf_node in self.carbon_cache_finder.find_nodes(query, nodes_with_incomplete_result):
+    cache_states = {}
+
+    for leaf_node in self.carbon_cache_finder.find_nodes(query, nodes_with_incomplete_result, cache_states):
       yield leaf_node
       found_in_cache = True
 
-    if found_in_cache and query.startTime != 0:
+    if (found_in_cache or cache_states.get("should_ignore", None)) and query.startTime != 0:
       return
 
     # Start local searches
@@ -169,6 +171,14 @@ class Store:
 
       # Fast-path when there is a single node.
       if len(leaf_nodes) == 1:
+        ignore = False
+        for interval in leaf_nodes[0].intervals:
+          if interval.end < query.startTime:
+            ignore = True
+            break
+        if ignore:
+          log.info("Ignored the whisper node because the whisper file does't have data falled in the query range")
+          continue
         yield leaf_nodes[0]
         continue
 

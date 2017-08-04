@@ -95,7 +95,7 @@ class CarbonLinkPool:
     request = dict(type='cache-query-precheck', metric=metric, timestamp=timestamp)
     results = self.send_request(request)
     log.cache("CarbonLink cache-query-precheck request for %s" % (metric))
-    return (results["exists"], results["partial_exists"])
+    return (results["exists"], results["partial_exists"], results["should_ignore"])
 
   def expand_query(self, metric):
     request = dict(type='cache-query-expand-wildcards', metric=metric)

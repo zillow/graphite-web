@@ -12,12 +12,15 @@ class CarbonCacheFinder:
     def __init__(self):
         pass
 
-    def find_nodes(self, query, cache_incomplete_nodes=None):
+    def find_nodes(self, query, cache_incomplete_nodes=None, cache_states=None):
         clean_patterns = query.pattern.replace('\\', '')
         has_wildcard = clean_patterns.find('{') > -1 or clean_patterns.find('[') > -1 or clean_patterns.find('*') > -1 or clean_patterns.find('?') > -1
 
         if cache_incomplete_nodes is None:
             cache_incomplete_nodes = {}
+
+        if cache_states is None:
+            cache_states = {}
 
         # CarbonLink has some hosts
         if CarbonLink.hosts:
@@ -34,23 +37,41 @@ class CarbonCacheFinder:
             # dedup, because of BranchNodes
             metrics = list(set(metrics))
             # check all metrics in same valid query range
-            prechecks = []
+            exists = True
+            partial_exists = True
+            should_ignores = None
+            # filter
+            filtered_metrics = []
             for m, is_leaf in metrics:
                 if is_leaf:
-                    prechecks.append(CarbonLink.precheck(m, query.startTime))
+                    exist, partial_exist, should_ignore = CarbonLink.precheck(m, query.startTime)
                 else:  # return True for BranchNode
-                    prechecks.append((True, True))
-            exists = all((exist for exist, partial_exist in prechecks))
-            partial_exists = all((partial_exist for exist, partial_exist in prechecks))
+                    exist, partial_exist, should_ignore = (True, True, False)
+
+                exists = exists and exist
+                partial_exists = partial_exists and partial_exist
+
+                if should_ignores is None:
+                    should_ignores = should_ignore
+                else:
+                    should_ignores = should_ignores and should_ignore
+
+                if not should_ignore:
+                    filtered_metrics.append((m, is_leaf))
+
+            # If we can ignore, we then stop keep searching disk.
+            # otherwise, we may end up by searching disk.
+            cache_states["should_ignore"] = should_ignores
+
             if exists:
-                for metric, is_leaf in metrics:
+                for metric, is_leaf in filtered_metrics:
                     if is_leaf:
                         reader = CarbonCacheReader(metric)
                         yield LeafNode(metric, reader)
                     else:
                         yield BranchNode(metric)
             elif partial_exists:
-                for metric, is_leaf in metrics:
+                for metric, is_leaf in filtered_metrics:
                     if is_leaf:
                         reader = CarbonCacheReader(metric)
                         cache_incomplete_nodes[metric] = LeafNode(metric, reader)
