@@ -123,11 +123,12 @@ class Store:
 
     # That means we should search all matched nodes.
     # it would merge nodes with new metrics that only exists in carbon-cache
-    if query.startTime == 0:
-      # merge any new metric node that only exists in carbon-cache
-      for name, node in nodes_with_incomplete_result.iteritems():
-        if name not in nodes_by_path:
-          nodes_by_path[name].append(node)
+
+    # merge any new metric node that only exists in carbon-cache,
+    # although they partial exist.
+    for name, node in nodes_with_incomplete_result.iteritems():
+      if name not in nodes_by_path:
+        nodes_by_path[name].append(node)
 
     log.info("Got all find results in %fs" % (time.time() - start))
 
