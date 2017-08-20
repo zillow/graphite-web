@@ -17,6 +17,8 @@ from graphite.node import LeafNode
 from graphite.intervals import Interval, IntervalSet
 from graphite.readers import MultiReader
 from graphite.worker_pool.pool import get_pool
+from gevent.pool import Pool
+
 
 
 def get_finder(finder_path):
@@ -41,6 +43,9 @@ class Store:
       hosts = settings.CLUSTER_SERVERS
     remote_hosts = [host for host in hosts if not settings.REMOTE_EXCLUDE_LOCAL or not is_local_interface(host)]
     self.remote_stores = [ RemoteStore(host) for host in remote_hosts ]
+
+    # Introduce Gevent Worker Pool
+    self.worker_pool = Pool()
 
 
   def find(self, pattern, startTime=None, endTime=None, local=False, headers=None):
@@ -87,36 +92,14 @@ class Store:
     for finder in self.finders:
       jobs.append((finder.find_nodes, query))
 
-    if settings.USE_WORKER_POOL:
-      return_result = lambda x: result_queue.put(x)
-      for job in jobs:
-        get_pool().apply_async(func=job[0], args=job[1:], callback=return_result)
-    else:
-      for job in jobs:
-        result_queue.put(job[0](*job[1:]))
-
     # Group matching nodes by their path
     nodes_by_path = defaultdict(list)
 
-    deadline = start + settings.REMOTE_FIND_TIMEOUT
-    result_cnt = 0
+    def _work(job):
+      return job[0](*job[1:])
+    nodes_list = self.worker_pool.map(_work, jobs)
 
-    while result_cnt < len(jobs):
-      wait_time = deadline - time.time()
-
-      try:
-        nodes = result_queue.get(True, wait_time)
-
-      # ValueError could happen if due to really unlucky timing wait_time is negative
-      except (Queue.Empty, ValueError):
-        if time.time() > deadline:
-          log.info("Timed out in find_all after %fs" % (settings.REMOTE_FIND_TIMEOUT))
-          break
-        else:
-          continue
-
-      log.info("Got a find result after %fs" % (time.time() - start))
-      result_cnt += 1
+    for nodes in nodes_list:
       if nodes:
         for node in nodes:
           nodes_by_path[node.path].append(node)

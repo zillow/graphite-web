@@ -51,3 +51,4 @@ git+git://github.com/graphite-project/ceres.git#egg=ceres
 whitenoise
 scandir
 urllib3
+gevent

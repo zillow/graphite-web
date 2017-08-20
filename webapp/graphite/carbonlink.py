@@ -8,6 +8,7 @@ from django.conf import settings
 from graphite.render.hashing import ConsistentHashRing
 from graphite.logger import log
 from graphite.util import load_module, unpickle
+from gevent.pool import Pool
 
 try:
   import cPickle as pickle
@@ -37,6 +38,8 @@ class CarbonLinkPool:
     self.keyfunc = load_keyfunc()
     self.connections = {}
     self.last_failure = {}
+    self.worker_pool = Pool()
+
     # Create a connection pool for each host
     for host in self.hosts:
       self.connections[host] = set()
@@ -169,22 +172,35 @@ class CarbonLinkPool:
     request_packet = len_prefix + serialized_request
     results = self._preprocess_send_all_result(request["type"])
 
-    for host in self.hosts:
-      conn = self.get_connection(host)
-      log.cache("CarbonLink sending request for %s to %s" % (metric, str(host)))
+    # unit work
+    def _fetch(h):
+      conn = self.get_connection(h)
+      log.cache("CarbonLink sending request for %s to %s" % (metric, str(h)))
       try:
         conn.sendall(request_packet)
         result = self.recv_response(conn)
       except Exception,e:
-        self.last_failure[host] = time.time()
-        log.cache("Exception getting data from cache %s: %s" % (str(host), e))
+        self.last_failure[h] = time.time()
+        log.cache("Exception getting data from cache %s: %s" % (str(h), e))
+        return None
       else:
-        self.connections[host].add(conn)
-        if 'error' in result:
-          log.cache("Error getting data from cache %s: %s" % (str(host), result['error']))
-        else:
-          self._postprocess_send_all_result(request["type"], results, result)
-      log.cache("CarbonLink finished receiving %s from %s" % (str(metric), str(host)))
+        self.connections[h].add(conn)
+        return result
+      log.cache("CarbonLink finished receiving %s from %s" % (str(metric), str(h)))
+
+    raw_results = self.worker_pool.map(_fetch, self.hosts)
+
+    # post processing
+    rqst_type = request["type"]
+    for r in raw_results:
+      if r is None:
+        continue
+      if rqst_type == "cache-query-expand-wildcards":
+        results["queries"] += r.get("queries")
+      elif rqst_type == "cache-query":
+        if len(r['datapoints']) > 1:
+          results['datapoints'].update(r['datapoints'])
+
     return results
 
   def _preprocess_send_all_result(self, rqst_type):
