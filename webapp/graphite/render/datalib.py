@@ -157,11 +157,16 @@ def _fetchData(pathExpr, startTime, endTime, now, requestContext, seriesList):
     result_queue = result_queue_generator()
   else:
     matching_nodes = [node for node in STORE.find(pathExpr, startTime, endTime, local=requestContext['localOnly'])]
-    result_queue = [
-      (node.path, node.fetch(startTime, endTime, now, requestContext))
-      for node in matching_nodes
-      if node.is_leaf
-    ]
+    jobs = []
+
+    for node in matching_nodes:
+      if node.is_leaf:
+        jobs.append((node.path, node.fetch, startTime, endTime, now, requestContext))
+
+    def _work(job):
+      return (job[0], job[1](*job[2:]))
+
+    result_queue = RENDER_WORKER_POOL.map(_work, jobs)
 
   log.info("render.datalib.fetchData :: starting to merge")
   for path, results in result_queue:
