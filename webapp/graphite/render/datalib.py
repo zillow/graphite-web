@@ -20,9 +20,14 @@ from graphite.util import epoch
 from graphite.carbonlink import CarbonLink
 import time
 from graphite.util import timebounds, logtime
+from gevent.pool import Pool
 
 
 from traceback import format_exc
+
+
+RENDER_WORKER_POOL = Pool()
+
 
 class TimeSeries(list):
   def __init__(self, name, start, end, step, values, consolidate='average'):
