@@ -2011,8 +2011,7 @@ function graphClicked(graphView, graphIndex, element, evt) {
               win.show();
            }
         }
-        // var url = document.body.dataset.baseUrl + 's/render?' + Ext.urlEncode(record.data.params);
-        var url = document.body.dataset.baseUrl + 's' + record.modified.url;
+        var url = document.body.dataset.baseUrl + 's/' + record.modified.url;
         Ext.Ajax.request({
           method: 'GET',
           url: url,
