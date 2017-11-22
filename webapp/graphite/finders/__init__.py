@@ -1,6 +1,6 @@
-import fnmatch
 import os.path
 import re
+from . import fnmatch_vendor
 
 EXPAND_BRACES_RE = re.compile(r'.*(\{.*?[^\\]?\})')
 
@@ -47,7 +47,7 @@ def match_entries(entries, pattern):
   matching = []
 
   for variant in expand_braces(pattern):
-    matching.extend(fnmatch.filter(entries, variant))
+    matching.extend(fnmatch_vendor.filter(entries, variant))
 
   return list(_deduplicate(matching))
 
