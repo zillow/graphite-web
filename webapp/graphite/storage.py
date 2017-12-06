@@ -85,12 +85,13 @@ class Store:
       yield leaf_node
       found_in_cache = True
 
-    if query.cache_only or (found_in_cache and query.startTime != 0):
+    if found_in_cache and query.startTime != 0:
       return
 
-    # Start local searches
-    for finder in self.finders:
-      jobs.append((finder.find_nodes, query))
+    if not query.cache_only:
+      # Start local searches
+      for finder in self.finders:
+        jobs.append((finder.find_nodes, query))
 
     # Group matching nodes by their path
     nodes_by_path = defaultdict(list)

@@ -206,7 +206,8 @@ class RemoteReader(object):
     ]
     if now is not None:
       query_params.append(('now', str( int(now) )))
-
+    if requestContext and requestContext.get("cacheOnly", False):
+      query_params.append(('cacheOnly', '1'))
     query_string = urlencode(query_params)
     urlpath = '/render/'
     url = "%s://%s%s" % ('https' if settings.INTRACLUSTER_HTTPS else 'http', self.store.host, urlpath)
