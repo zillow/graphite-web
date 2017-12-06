@@ -59,6 +59,7 @@ def renderView(request):
     'endTime' : requestOptions['endTime'],
     'now': requestOptions['now'],
     'localOnly' : requestOptions['localOnly'],
+    'cacheOnly': requestOptions.get('cacheOnly', False),
     'template' : requestOptions['template'],
     'tzinfo' : requestOptions['tzinfo'],
     'forwardHeaders': extractForwardHeaders(request),
@@ -364,6 +365,8 @@ def parseOptions(request):
       requestOptions['jsonp'] = queryParams['jsonp']
   if 'noCache' in queryParams:
     requestOptions['noCache'] = True
+  if 'cacheOnly' in queryParams:
+    requestOptions['cacheOnly'] = True
   if 'maxDataPoints' in queryParams and queryParams['maxDataPoints'].isdigit():
     requestOptions['maxDataPoints'] = int(queryParams['maxDataPoints'])
   if 'noNullPoints' in queryParams:

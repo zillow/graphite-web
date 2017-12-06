@@ -94,6 +94,9 @@ class FindRequest(object):
       if self.query.endTime:
         query_params.append( ('until', self.query.endTime) )
 
+      if self.query.cache_only:
+        query_params.append( ('cacheOnly', '1') )
+
       try:
         result = http.request('POST' if settings.REMOTE_STORE_USE_POST else 'GET',
                               url, fields=query_params, headers=headers, timeout=settings.REMOTE_FIND_TIMEOUT)

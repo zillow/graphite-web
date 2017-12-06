@@ -48,11 +48,11 @@ class Store:
     self.worker_pool = Pool()
 
 
-  def find(self, pattern, startTime=None, endTime=None, local=False, headers=None):
+  def find(self, pattern, startTime=None, endTime=None, local=False, headers=None, cache_only=False):
     # Force graphite-web to search both cache and disk.
     if not startTime:
       startTime = 0
-    query = FindQuery(pattern, startTime, endTime, local)
+    query = FindQuery(pattern, startTime, endTime, local, cache_only=cache_only)
 
     for match in self.find_all(query, headers):
       yield match
@@ -85,7 +85,7 @@ class Store:
       yield leaf_node
       found_in_cache = True
 
-    if found_in_cache and query.startTime != 0:
+    if query.cache_only or (found_in_cache and query.startTime != 0):
       return
 
     # Start local searches
@@ -224,7 +224,7 @@ class Store:
 
 
 class FindQuery:
-  def __init__(self, pattern, startTime, endTime, local=False):
+  def __init__(self, pattern, startTime, endTime, local=False, cache_only=False):
     self.pattern = pattern
     self.startTime = startTime
     self.endTime = endTime
@@ -232,6 +232,7 @@ class FindQuery:
     self.interval = Interval(float('-inf') if startTime is None else startTime,
                              float('inf') if endTime is None else endTime)
     self.local = local
+    self.cache_only = cache_only
 
 
   def __repr__(self):

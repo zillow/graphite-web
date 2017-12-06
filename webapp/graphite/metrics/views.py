@@ -105,6 +105,7 @@ def find_view(request):
   nodePosition = int( queryParams.get('position', -1) )
   jsonp = queryParams.get('jsonp', False)
   forward_headers = extractForwardHeaders(request)
+  cache_only = True if 'cacheOnly' in queryParams else False
 
   if fromTime == -1:
     fromTime = None
@@ -137,7 +138,7 @@ def find_view(request):
       query = '.'.join(query_parts)
 
   try:
-    matches = list( STORE.find(query, fromTime, untilTime, local=local_only, headers=forward_headers) )
+    matches = list( STORE.find(query, fromTime, untilTime, local=local_only, headers=forward_headers, cache_only=cache_only) )
   except:
     log.exception()
     raise
@@ -202,11 +203,12 @@ def expand_view(request):
   leaves_only = int( queryParams.get('leavesOnly', 0) )
   jsonp = queryParams.get('jsonp', False)
   forward_headers = extractForwardHeaders(request)
+  cache_only = True if 'cacheOnly' in queryParams else False
 
   results = {}
   for query in queryParams.getlist('query'):
     results[query] = set()
-    for node in STORE.find(query, local=local_only, headers=forward_headers):
+    for node in STORE.find(query, local=local_only, headers=forward_headers, cache_only=cache_only):
       if node.is_leaf or not leaves_only:
         results[query].add( node.path )
 

@@ -113,8 +113,9 @@ class TimeSeries(list):
 
 @logtime()
 def _fetchData(pathExpr, startTime, endTime, now, requestContext, seriesList):
+  cache_only = requestContext.get("cacheOnly", False)
   if settings.REMOTE_PREFETCH_DATA:
-    matching_nodes = [node for node in STORE.find(pathExpr, startTime, endTime, local=True)]
+    matching_nodes = [node for node in STORE.find(pathExpr, startTime, endTime, local=True, cache_only=cache_only)]
 
     # inflight_requests is only present if at least one remote store
     # has been queried
@@ -156,7 +157,7 @@ def _fetchData(pathExpr, startTime, endTime, now, requestContext, seriesList):
 
     result_queue = result_queue_generator()
   else:
-    matching_nodes = [node for node in STORE.find(pathExpr, startTime, endTime, local=requestContext['localOnly'])]
+    matching_nodes = [node for node in STORE.find(pathExpr, startTime, endTime, local=requestContext['localOnly'], cache_only=cache_only)]
     result_queue = [
       (node.path, node.fetch(startTime, endTime, now, requestContext))
       for node in matching_nodes
