@@ -99,7 +99,12 @@ class FindRequest(object):
 
       try:
         result = http.request('POST' if settings.REMOTE_STORE_USE_POST else 'GET',
-                              url, fields=query_params, headers=headers, timeout=settings.REMOTE_FIND_TIMEOUT)
+                              url,
+                              fields=query_params,
+                              headers=headers,
+                              timeout=settings.REMOTE_FIND_TIMEOUT,
+                              retries=settings.REMOTE_FIND_RETRIES,
+                            )
       except:
         log.exception("FindRequest.send(host=%s, query=%s) exception during request" % (self.store.host, self.query))
         self.store.fail()
@@ -302,6 +307,7 @@ class RemoteReader(object):
         fields=query_params,
         headers=headers,
         timeout=settings.REMOTE_FETCH_TIMEOUT,
+        retries=settings.REMOTE_FETCH_RETRIES,
       )
 
       if result.status != 200:
