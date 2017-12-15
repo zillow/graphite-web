@@ -13,7 +13,7 @@ from graphite.util import unpickle, logtime, timebounds
 from graphite.render.hashing import compactHash
 from graphite.worker_pool.pool import get_pool
 
-http = urllib3.PoolManager(num_pools=10, maxsize=5)
+http = urllib3.PoolManager(num_pools=10, maxsize=20)
 
 
 def prefetchRemoteData(remote_stores, requestContext, pathExpressions):
