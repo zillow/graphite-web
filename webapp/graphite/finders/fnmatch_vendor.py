@@ -10,16 +10,15 @@ corresponding to PATTERN.  (It does not compile it.)
 import re
 import os
 import posixpath
+from lru import LRU
 
 
 __all__ = ["filter", "fnmatch", "fnmatchcase", "translate"]
 
-_cache = {}
-_MAXCACHE = 10000
 
-def _purge():
-    """Clear the pattern cache"""
-    _cache.clear()
+_MAXCACHE = 100000
+_cache = LRU(_MAXCACHE)
+
 
 def fnmatch(name, pat):
     """Test whether FILENAME matches PATTERN.
@@ -32,10 +31,11 @@ def fnmatch(name, pat):
     Both FILENAME and PATTERN are first case-normalized
     if the operating system requires it.
     If you don't want this, use fnmatchcase(FILENAME, PATTERN).
+
+    *** Fast Version without normcase *** But only works in unix and macos ***
     """
-    name = os.path.normcase(name)
-    pat = os.path.normcase(pat)
     return fnmatchcase(name, pat)
+
 
 def filter(names, pat):
     """Return the subset of the list NAMES that match PAT"""
@@ -45,8 +45,6 @@ def filter(names, pat):
         re_pat = _cache[pat]
     except KeyError:
         res = translate(pat)
-        if len(_cache) >= _MAXCACHE:
-            _cache.clear()
         _cache[pat] = re_pat = re.compile(res)
     match = re_pat.match
     if os.path is posixpath:
@@ -60,6 +58,7 @@ def filter(names, pat):
                 result.append(name)
     return result
 
+
 def fnmatchcase(name, pat):
     """Test whether FILENAME matches PATTERN, including case.
     This is a version of fnmatch() which doesn't case-normalize
@@ -70,10 +69,9 @@ def fnmatchcase(name, pat):
         re_pat = _cache[pat]
     except KeyError:
         res = translate(pat)
-        if len(_cache) >= _MAXCACHE:
-            _cache.clear()
         _cache[pat] = re_pat = re.compile(res)
     return re_pat.match(name) is not None
+
 
 def translate(pat):
     """Translate a shell PATTERN to a regular expression.
