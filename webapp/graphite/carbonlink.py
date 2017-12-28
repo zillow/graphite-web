@@ -91,37 +91,37 @@ class CarbonLinkPool:
   def query(self, metric):
     request = dict(type='cache-query', metric=metric)
     results = self.send_request(request)
-    log.cache("CarbonLink cache-query request for %s returned %d datapoints" % (metric, len(results['datapoints'])))
+    # log.cache("CarbonLink cache-query request for %s returned %d datapoints" % (metric, len(results['datapoints'])))
     return results['datapoints']
 
   def precheck(self, metric, timestamp=None):
     request = dict(type='cache-query-precheck', metric=metric, timestamp=timestamp)
     results = self.send_request(request)
-    log.cache("CarbonLink cache-query-precheck request for %s" % (metric))
+    # log.cache("CarbonLink cache-query-precheck request for %s" % (metric))
     return (results["exists"], results["partial_exists"])
 
   def expand_query(self, metric):
     request = dict(type='cache-query-expand-wildcards', metric=metric)
     results = self.send_request(request)
-    log.cache("CarbonLink cache-query-expand-wildcards request for %s" % (metric))
+    # log.cache("CarbonLink cache-query-expand-wildcards request for %s" % (metric))
     return results["queries"]
 
   def get_metadata(self, metric, key):
     request = dict(type='get-metadata', metric=metric, key=key)
     results = self.send_request(request)
-    log.cache("CarbonLink get-metadata request received for %s:%s" % (metric, key))
+    # log.cache("CarbonLink get-metadata request received for %s:%s" % (metric, key))
     return results['value']
 
   def get_storage_schema(self, metric):
     request = dict(type='get-storageschema', metric=metric)
     results = self.send_request(request)
-    log.cache("CarbonLink get-storageschema request for %s returned %s schema" % (metric, results['name']))
+    # log.cache("CarbonLink get-storageschema request for %s returned %s schema" % (metric, results['name']))
     return results
 
   def set_metadata(self, metric, key, value):
     request = dict(type='set-metadata', metric=metric, key=key, value=value)
     results = self.send_request(request)
-    log.cache("CarbonLink set-metadata request received for %s:%s" % (metric, key))
+    # log.cache("CarbonLink set-metadata request received for %s:%s" % (metric, key))
     return results
 
   def send_request(self, request):
@@ -141,7 +141,7 @@ class CarbonLinkPool:
 
     host = self.select_host(metric)
     conn = self.get_connection(host)
-    log.cache("CarbonLink sending request for %s to %s" % (metric, str(host)))
+    # log.cache("CarbonLink sending request for %s to %s" % (metric, str(host)))
     try:
       conn.sendall(request_packet)
       result = self.recv_response(conn)
@@ -151,9 +151,9 @@ class CarbonLinkPool:
     else:
       self.connections[host].add(conn)
       if 'error' in result:
-        log.cache("Error getting data from cache: %s" % result['error'])
+        # log.cache("Error getting data from cache: %s" % result['error'])
         raise CarbonLinkRequestError(result['error'])
-      log.cache("CarbonLink finished receiving %s from %s" % (str(metric), str(host)))
+      # log.cache("CarbonLink finished receiving %s from %s" % (str(metric), str(host)))
     return result
 
   def _is_all_request(self, request):
@@ -175,18 +175,18 @@ class CarbonLinkPool:
     # unit work
     def _fetch(h):
       conn = self.get_connection(h)
-      log.cache("CarbonLink sending request for %s to %s" % (metric, str(h)))
+      # log.cache("CarbonLink sending request for %s to %s" % (metric, str(h)))
       try:
         conn.sendall(request_packet)
         result = self.recv_response(conn)
       except Exception,e:
         self.last_failure[h] = time.time()
-        log.cache("Exception getting data from cache %s: %s" % (str(h), e))
+        # log.cache("Exception getting data from cache %s: %s" % (str(h), e))
         return None
       else:
         self.connections[h].add(conn)
         return result
-      log.cache("CarbonLink finished receiving %s from %s" % (str(metric), str(h)))
+      # log.cache("CarbonLink finished receiving %s from %s" % (str(metric), str(h)))
 
     raw_results = self.worker_pool.map(_fetch, self.hosts)
 
