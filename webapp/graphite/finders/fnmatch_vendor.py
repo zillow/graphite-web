@@ -38,24 +38,23 @@ def fnmatch(name, pat):
 
 
 def filter(names, pat):
-    """Return the subset of the list NAMES that match PAT"""
-    result=[]
-    pat=os.path.normcase(pat)
+    """Return the subset of the list NAMES that match PAT
+
+    *** Fast Version without normcase *** But only works in unix and macos ***
+    """
+    result = []
     try:
         re_pat = _cache[pat]
     except KeyError:
         res = translate(pat)
         _cache[pat] = re_pat = re.compile(res)
     match = re_pat.match
-    if os.path is posixpath:
-        # normcase on posix is NOP. Optimize it away from the loop.
-        for name in names:
-            if match(name):
-                result.append(name)
-    else:
-        for name in names:
-            if match(os.path.normcase(name)):
-                result.append(name)
+
+    # normcase on posix is NOP. Optimize it away from the loop.
+    for name in names:
+        if match(name):
+            result.append(name)
+
     return result
 
 
