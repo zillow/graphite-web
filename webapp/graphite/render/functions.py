@@ -18,14 +18,18 @@ import re
 import time
 
 from datetime import datetime, timedelta
-from itertools import izip, imap
+from itertools import izip, imap, izip_longest
 from os import environ
+
+from django.conf import settings
+import six
 
 from graphite.logger import log
 from graphite.render.attime import parseTimeOffset, parseATTime
 from graphite.events import models
 from graphite.util import epoch, timestamp, deltaseconds
 from graphite.render.grammar import grammar
+
 
 # XXX format_units() should go somewhere else
 if environ.get('READTHEDOCS'):
@@ -85,6 +89,16 @@ def safeSubtract(a,b):
 def safeAvg(a):
   return safeDiv(safeSum(a),safeLen(a))
 
+def safeMedian(values):
+  safeValues = [v for v in values if v is not None]
+  if safeValues:
+    sortedVals = sorted(safeValues)
+    mid = len(sortedVals) // 2
+    if len(sortedVals) % 2 == 0:
+      return float(sortedVals[mid-1] + sortedVals[mid]) / 2
+    else:
+      return sortedVals[mid]
+
 def safeStdDev(a):
   sm = safeSum(a)
   ln = safeLen(a)
@@ -135,6 +149,17 @@ def lcm(a, b):
   if a < b: (a, b) = (b, a) #ensure a > b
   return a / gcd(a,b) * b
 
+# check list of values against xFilesFactor
+def xffValues(values, xFilesFactor):
+  if not values:
+    return False
+  return xff(len([v for v in values if v is not None]), len(values), xFilesFactor)
+
+def xff(nonNull, total, xFilesFactor=None):
+  if not nonNull or not total:
+    return False
+  return nonNull / total >= (xFilesFactor if xFilesFactor is not None else settings.DEFAULT_XFILES_FACTOR)
+
 def normalize(seriesLists):
   if seriesLists:
     seriesList = reduce(lambda L1,L2: L1+L2,seriesLists)
@@ -164,6 +189,82 @@ def formatPathExpressions(seriesList):
    return ','.join(pathExpressions)
 
 # Series Functions
+
+aggFuncs = {
+  'average': safeAvg,
+  'median': safeMedian,
+  'sum': safeSum,
+  'min': safeMin,
+  'max': safeMax,
+  'diff': safeDiff,
+  'stddev': safeStdDev,
+  'count': safeLen,
+  'range': lambda row: safeSubtract(safeMax(row), safeMin(row)),
+  'multiply': lambda row: safeMul(*row),
+  'last': safeLast,
+}
+
+aggFuncAliases = {
+  'rangeOf': aggFuncs['range'],
+  'avg': aggFuncs['average'],
+  'total': aggFuncs['sum'],
+  'current': aggFuncs['last'],
+}
+
+aggFuncNames = sorted(aggFuncs.keys())
+
+def getAggFunc(func, rawFunc=None):
+  if func in aggFuncs:
+    return aggFuncs[func]
+  if func in aggFuncAliases:
+    return aggFuncAliases[func]
+  raise ValueError('Unsupported aggregation function: %s' % (rawFunc or func))
+
+def aggregate(requestContext, seriesList, func, xFilesFactor=None):
+  """
+  Aggregate series using the specified function.
+
+  Example:
+
+  .. code-block:: none
+
+    &target=aggregate(host.cpu-[0-7].cpu-{user,system}.value, "sum")
+
+  This would be the equivalent of
+
+  .. code-block:: none
+
+    &target=sumSeries(host.cpu-[0-7].cpu-{user,system}.value)
+
+  This function can be used with aggregation functions ``average``, ``median``, ``sum``, ``min``,
+  ``max``, ``diff``, ``stddev``, ``count``, ``range``, ``multiply`` & ``last``.
+  """
+  # strip Series from func if func was passed like sumSeries
+  rawFunc = func
+  if func[-6:] == 'Series':
+    func = func[:-6]
+
+  consolidationFunc = getAggFunc(func, rawFunc)
+
+  # if seriesList is empty then just short-circuit
+  if not seriesList:
+    return []
+
+  # if seriesList is a single series then wrap it for normalize
+  if isinstance(seriesList[0], TimeSeries):
+    seriesList = [seriesList]
+
+  try:
+    (seriesList,start,end,step) = normalize(seriesList)
+  except:
+    return []
+  xFilesFactor = xFilesFactor if xFilesFactor is not None else requestContext.get('xFilesFactor')
+  name = "%sSeries(%s)" % (func, formatPathExpressions(seriesList))
+  values = ( consolidationFunc(row) if xffValues(row, xFilesFactor) else None for row in izip_longest(*seriesList) )
+  series = TimeSeries(name, start, end, step, values, xFilesFactor=xFilesFactor)
+
+  return [series]
+
 
 #NOTE: Some of the functions below use izip, which may be problematic.
 #izip stops when it hits the end of the shortest series
@@ -407,7 +508,8 @@ def maxSeries(requestContext, *seriesLists):
 def rangeOfSeries(requestContext, *seriesLists):
     """
     Takes a wildcard seriesList.
-    Distills down a set of inputs into the range of the series
+    Distills down a set of inputs into the range of
+    the series
 
     Example:
 
@@ -755,6 +857,77 @@ def weightedAverage(requestContext, seriesListAvg, seriesListWeight, *nodes):
   resultSeries = TimeSeries(name,sumProducts.start,sumProducts.end,sumProducts.step,resultValues)
   resultSeries.pathExpression = name
   return [resultSeries]
+
+def movingWindow(requestContext, seriesList, windowSize, func='average', xFilesFactor=None):
+  """
+  Graphs a moving window function of a metric (or metrics) over a fixed number of
+  past points, or a time interval.
+
+  Takes one metric or a wildcard seriesList, a number N of datapoints
+  or a quoted string with a length of time like '1hour' or '5min' (See ``from /
+  until`` in the render\_api_ for examples of time formats), a function to apply to the points
+  in the window to produce the output, and an xFilesFactor value to specify how many points in the
+  window must be non-null for the output to be considered valid. Graphs the
+  output of the function for the preceeding datapoints for each point on the graph.
+
+  Example:
+
+  .. code-block:: none
+
+    &target=movingWindow(Server.instance01.threads.busy,10)
+    &target=movingWindow(Server.instance*.threads.idle,'5min','median',0.5)
+
+  .. note::
+
+    `xFilesFactor` follows the same semantics as in Whisper storage schemas.  Setting it to 0 (the
+    default) means that only a single value in a given interval needs to be non-null, setting it to
+    1 means that all values in the interval must be non-null.  A setting of 0.5 means that at least
+    half the values in the interval must be non-null.
+  """
+  if not seriesList:
+    return []
+
+  if isinstance(windowSize, six.string_types):
+    delta = parseTimeOffset(windowSize)
+    previewSeconds = abs(delta.seconds + (delta.days * 86400))
+  else:
+    previewSeconds = max([s.step for s in seriesList]) * int(windowSize)
+
+  consolidateFunc = getAggFunc(func)
+
+  # ignore original data and pull new, including our preview
+  # data from earlier is needed to calculate the early results
+  newContext = requestContext.copy()
+  newContext['startTime'] = requestContext['startTime'] -  timedelta(seconds=previewSeconds)
+  previewList = evaluateTokens(newContext, requestContext['args'][0])
+  result = []
+
+  tagName = 'moving' + func.capitalize()
+
+  for series in previewList:
+    if isinstance(windowSize, six.string_types):
+      newName = '%s(%s,"%s")' % (tagName, series.name, windowSize)
+      windowPoints = previewSeconds // series.step
+    else:
+      newName = '%s(%s,%s)' % (tagName, series.name, windowSize)
+      windowPoints = int(windowSize)
+
+    newSeries = series.copy(name=newName, start=series.start + previewSeconds, values=[])
+
+    effectiveXFF = xFilesFactor if xFilesFactor is not None else series.xFilesFactor
+
+    for i in range(windowPoints, len(series)):
+      nonNull = [v for v in series[i - windowPoints:i] if v is not None]
+
+      if nonNull and xff(len(nonNull), windowPoints, effectiveXFF):
+        val = consolidateFunc(nonNull)
+      else:
+        val = None
+      newSeries.append(val)
+
+    result.append(newSeries)
+
+  return result
 
 def exponentialMovingAverage(requestContext, seriesList, windowSize):
   """
@@ -4049,6 +4222,7 @@ PieFunctions = {
 
 SeriesFunctions = {
   # Combine functions
+  'aggregate': aggregate,
   'sumSeries': sumSeries,
   'sum': sumSeries,
   'multiplySeries': multiplySeries,
@@ -4096,6 +4270,7 @@ SeriesFunctions = {
   'movingSum': movingSum,
   'movingMin': movingMin,
   'movingMax': movingMax,
+  'movingWindow': movingWindow,
   'stdev': stdev,
   'holtWintersForecast': holtWintersForecast,
   'holtWintersConfidenceBands': holtWintersConfidenceBands,

@@ -25,7 +25,7 @@ from graphite.util import timebounds, logtime
 from traceback import format_exc
 
 class TimeSeries(list):
-  def __init__(self, name, start, end, step, values, consolidate='average'):
+  def __init__(self, name, start, end, step, values, consolidate='average', xFilesFactor=None, pathExpression=None):
     list.__init__(self, values)
     self.name = name
     self.start = start
@@ -34,7 +34,8 @@ class TimeSeries(list):
     self.consolidationFunc = consolidate
     self.valuesPerPoint = 1
     self.options = {}
-    self.pathExpression = name
+    self.pathExpression = pathExpression or name
+    self.xFilesFactor = xFilesFactor if xFilesFactor is not None else settings.DEFAULT_XFILES_FACTOR
 
 
   def __eq__(self, other):
@@ -110,6 +111,16 @@ class TimeSeries(list):
       'pathExpression' : self.pathExpression,
     }
 
+  def copy(self, name=None, start=None, end=None, step=None, values=None, consolidate=None, xFilesFactor=None):
+    return TimeSeries(
+      name if name is not None else self.name,
+      start if start is not None else self.start,
+      end if end is not None else self.end,
+      step if step is not None else self.step,
+      values if values is not None else self.values,
+      consolidate=consolidate if consolidate is not None else self.consolidationFunc,
+      xFilesFactor=xFilesFactor if xFilesFactor is not None else self.xFilesFactor
+    )
 
 @logtime()
 def _fetchData(pathExpr, startTime, endTime, now, requestContext, seriesList):
