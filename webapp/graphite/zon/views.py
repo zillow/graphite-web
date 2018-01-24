@@ -59,14 +59,16 @@ def full_path_zon_test(request):
     metric_name = queryParams.get('metric', 'test.fullstack.graphite')
 
     # 1. Send data to graphite
-    random_data = _send_random_data(metric_name)
+    timestamp = time.time()
+    frm = int(timestamp)
+    random_data = _send_random_data(metric_name, timestamp)
 
     # 2. Wait (allow some latency)
     time.sleep(1)
 
     # 3. Query graphite
     try:
-        res = urlopen("http://localhost:{0}/render/?format=json&target={1}&from=-1min&noCache".format(port, metric_name))
+        res = urlopen("http://localhost:{0}/render/?format=json&target={1}&from={2}&cacheOnly".format(port, metric_name, str(frm)))
         s = res.read().decode('utf-8')
         json_obj = json.loads(s)
     except Exception:
@@ -107,7 +109,7 @@ def full_path_zon_test(request):
                             content_type='application/json')
     return response
 
-def _send_random_data(metric_name):
+def _send_random_data(metric_name, timestamp):
     data = random.randint(0, 9)
-    graphite_conn.write_metric(metric_name, data, int(time.time()))
+    graphite_conn.write_metric(metric_name, data, timestamp)
     return data
