@@ -275,8 +275,8 @@ class CarbonCacheReader(object):
   def _query_and_format_cache_data(self, from_time, until_time, step):
     cached_results = CarbonLink.query(self.metric)
     if cached_results:
-      from_interval = int(from_time - (from_time % step)) + step
-      until_interval = int(until_time - (until_time % step)) + step
+      from_interval = int(from_time - (from_time % step))
+      until_interval = int(until_time - (until_time % step))
       if from_interval == until_interval:
         until_interval += step
       points = (until_interval - from_interval) // step
