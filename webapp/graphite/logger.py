@@ -42,14 +42,17 @@ class GraphiteLogger:
     self.exceptionLogger = self._config_logger('exception.log',
                                                'exception',
                                                True,
+                                               level=logging.ERROR,
                                                )
     self.cacheLogger = self._config_logger('cache.log',
                                            'cache',
                                            settings.LOG_CACHE_PERFORMANCE,
+                                           level=logging.INFO,
                                            )
     self.renderingLogger = self._config_logger('rendering.log',
                                                'rendering',
                                                settings.LOG_RENDERING_PERFORMANCE,
+                                               level=logging.INFO,
                                                )
 
   @staticmethod
