@@ -75,16 +75,19 @@ class GraphiteLogger:
     return logger
 
   def info(self,msg,*args,**kwargs):
-    return self.infoLogger.info(msg,*args,**kwargs)
+    # return self.infoLogger.info(msg,*args,**kwargs)
+    return
 
   def exception(self,msg="Exception Caught",**kwargs):
     return self.exceptionLogger.exception(msg,**kwargs)
 
   def cache(self,msg,*args,**kwargs):
-    return self.cacheLogger.log(30,msg,*args,**kwargs)
+    # return self.cacheLogger.log(30,msg,*args,**kwargs)
+    return
 
   def rendering(self,msg,*args,**kwargs):
-    return self.renderingLogger.log(30,msg,*args,**kwargs)
+    # return self.renderingLogger.log(30,msg,*args,**kwargs)
+    return
 
 
 log = GraphiteLogger() # import-shared logger instance
