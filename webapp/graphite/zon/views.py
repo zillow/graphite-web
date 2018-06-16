@@ -59,8 +59,8 @@ def full_path_zon_test(request):
     metric_name = queryParams.get('metric', 'test.fullstack.graphite')
 
     # 1. Send data to graphite
-    timestamp = time.time()
-    frm = int(timestamp)
+    timestamp = int(time.time())
+    frm = timestamp - (timestamp % 60) - 30
     random_data = _send_random_data(metric_name, timestamp)
 
     # 2. Wait (allow some latency)
