@@ -84,7 +84,7 @@ class FindRequest(object):
       url = "%s://%s/metrics/find/" % ('https' if settings.INTRACLUSTER_HTTPS else 'http', self.store.host)
 
       query_params = [
-        ('local', '1'),
+        # ('local', '1'),
         ('format', 'pickle'),
         ('query', self.query.pattern),
       ]
@@ -205,7 +205,7 @@ class RemoteReader(object):
     query_params = [
       ('target', self.query),
       ('format', 'pickle'),
-      ('local', '1'),
+      # ('local', '1'),
       ('from', str( int(startTime) )),
       ('until', str( int(endTime) ))
     ]
