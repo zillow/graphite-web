@@ -288,6 +288,15 @@ def renderView(request):
       log.rendering('Total pickle rendering time %.6f' % (time() - start))
       return response
 
+    # this format is designed for replacing pickle format
+    if format == "infojson":
+      seriesInfo = [series.getInfo() for series in data]
+      output = json.dumps(seriesInfo)
+      response = HttpResponse(
+          content=output,
+          content_type='application/json')
+      return response
+
 
   # We've got the data, now to render it
   graphOptions['data'] = data
