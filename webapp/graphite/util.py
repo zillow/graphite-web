@@ -40,7 +40,10 @@ from graphite.logger import log
 
 # try ujson
 try:
+  import json as _json
   import ujson as json
+  # workaround fix for ujson and json not fully compatiable
+  json.JSONEncoder = _json.JSONEncoder
 except ImportError:
   import json
 
