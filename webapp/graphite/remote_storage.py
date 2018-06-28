@@ -132,7 +132,7 @@ class FindRequest(object):
       is_leaf = node_info.get('is_leaf') or node_info.get('isLeaf')
       intervals = node_info.get('intervals') or []
       if not isinstance(intervals, IntervalSet):
-        intervals = IntervalSet([Interval(interval[0], interval[1]) for interval in intervals])
+        intervals = IntervalSet([Interval(interval["start"], interval["end"]) for interval in intervals])
 
       node_info = {
         'is_leaf': is_leaf,
