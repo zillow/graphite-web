@@ -9,7 +9,7 @@ from graphite.intervals import Interval, IntervalSet
 from graphite.node import LeafNode, BranchNode
 from graphite.readers import FetchInProgress
 from graphite.logger import log
-from graphite.util import unpickle, logtime, timebounds
+from graphite.util import unpickle, logtime, timebounds, json
 from graphite.render.hashing import compactHash
 from graphite.worker_pool.pool import get_pool
 
@@ -85,7 +85,7 @@ class FindRequest(object):
 
       query_params = [
         ('local', '1'),
-        ('format', 'pickle'),
+        ('format', 'json'),
         ('query', self.query.pattern),
       ]
       if self.query.startTime:
@@ -116,7 +116,7 @@ class FindRequest(object):
         return
 
       try:
-        results = unpickle.loads(result.data)
+        results = json.loads(result.data)
       except:
         log.exception("FindRequest.send(host=%s, query=%s) exception processing response" % (self.store.host, self.query))
         self.store.fail()
@@ -204,7 +204,7 @@ class RemoteReader(object):
 
     query_params = [
       ('target', self.query),
-      ('format', 'pickle'),
+      ('format', 'infojson'),
       ('local', '1'),
       ('from', str( int(startTime) )),
       ('until', str( int(endTime) ))
@@ -315,7 +315,7 @@ class RemoteReader(object):
         self.log_error("ReadResult:: Error response %d from %s?%s" % (result.status, url, query_string))
         data = []
       else:
-        data = unpickle.loads(result.data)
+        data = json.loads(result.data)
     except Exception as err:
       self.store.fail()
       self.log_error("ReadResult:: Error requesting %s?%s: %s" % (url, query_string, err))
