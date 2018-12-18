@@ -82,7 +82,7 @@ try:
         ['templates/*', 'local_settings.py.example']},
       scripts=glob('bin/*'),
       data_files=webapp_content.items() + storage_dirs + conf_files + examples,
-      install_requires=['Django>=1.9,<1.9.99', 'django-tagging==0.4.3', 'pytz', 'pyparsing', 'cairocffi', 'urllib3', 'lru-dict', 'six'],
+      install_requires=['Django>=1.9,<1.9.99', 'django-tagging==0.4.3', 'pytz', 'pyparsing', 'cairocffi', 'urllib3', 'lru-dict', 'six', 'ujson'],
       classifiers=[
           'Intended Audience :: Developers',
           'Natural Language :: English',

@@ -88,7 +88,7 @@ def full_path_zon_test(request):
         elif "datapoints" not in json_obj:
             result = "fail"
             details = "datapoints field is missing"
-        elif len(json_obj["datapoints"]) != 1:
+        elif len(json_obj["datapoints"]) < 1 or len(json_obj["datapoints"]) > 2: # allow graphite return 2 intervals, (the latest one is likely None)
             result = "fail"
             details = "the number of returned datapoints is inconsistent"
         elif json_obj["datapoints"][0][0] is None:
