@@ -3027,16 +3027,16 @@ def secondYAxis(requestContext, seriesList):
 #             , series.step, aberration))
 #   return results
 
-def holtWintersConfidenceArea(requestContext, seriesList, delta=3):
-  """
-  Performs a Holt-Winters forecast using the series as input data and plots the
-  area between the upper and lower bands of the predicted forecast deviations.
-  """
-  bands = holtWintersConfidenceBands(requestContext, seriesList, delta)
-  results = areaBetween(requestContext, bands)
-  for series in results:
-    series.name = series.name.replace('areaBetween', 'holtWintersConfidenceArea')
-  return results
+# def holtWintersConfidenceArea(requestContext, seriesList, delta=3):
+#   """
+#   Performs a Holt-Winters forecast using the series as input data and plots the
+#   area between the upper and lower bands of the predicted forecast deviations.
+#   """
+#   bands = holtWintersConfidenceBands(requestContext, seriesList, delta)
+#   results = areaBetween(requestContext, bands)
+#   for series in results:
+#     series.name = series.name.replace('areaBetween', 'holtWintersConfidenceArea')
+#   return results
 
 ##############################################################################
 
@@ -3163,7 +3163,7 @@ def holtWintersForecast(requestContext, seriesList, bootstrapInterval='7d', seas
   # ignore original data and pull new, including our preview
   newContext = requestContext.copy()
   newContext['startTime'] = requestContext['startTime'] -  timedelta(seconds=previewSeconds)
-  previewList = evaluateTarget(newContext, requestContext['args'][0])
+  previewList = evaluateTokens(newContext, requestContext['args'][0])
   results = []
   for series in previewList:
     analysis = holtWintersAnalysis(series, seasonality)
@@ -3188,7 +3188,7 @@ def holtWintersConfidenceBands(requestContext, seriesList, delta=3, bootstrapInt
   # ignore original data and pull new, including our preview
   newContext = requestContext.copy()
   newContext['startTime'] = requestContext['startTime'] -  timedelta(seconds=previewSeconds)
-  previewList = evaluateTarget(newContext, requestContext['args'][0])
+  previewList = evaluateTokens(newContext, requestContext['args'][0])
   results = []
   for series in previewList:
     analysis = holtWintersAnalysis(series, seasonality)
