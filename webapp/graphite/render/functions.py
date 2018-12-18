@@ -2820,29 +2820,255 @@ def secondYAxis(requestContext, seriesList):
     series.name= 'secondYAxis(%s)' % series.name
   return seriesList
 
+################################## OLD #######################################
+
+# def holtWintersIntercept(alpha,actual,last_season,last_intercept,last_slope):
+#   return alpha * (actual - last_season) \
+#           + (1 - alpha) * (last_intercept + last_slope)
+
+# def holtWintersSlope(beta,intercept,last_intercept,last_slope):
+#   return beta * (intercept - last_intercept) + (1 - beta) * last_slope
+
+# def holtWintersSeasonal(gamma,actual,intercept,last_season):
+#   return gamma * (actual - intercept) + (1 - gamma) * last_season
+
+# def holtWintersDeviation(gamma,actual,prediction,last_seasonal_dev):
+#   if prediction is None:
+#     prediction = 0
+#   return gamma * math.fabs(actual - prediction) + (1 - gamma) * last_seasonal_dev
+
+# def holtWintersAnalysis(series):
+#   alpha = gamma = 0.1
+#   beta = 0.0035
+#   # season is currently one day
+#   season_length = (24*60*60) / series.step
+#   intercept = 0
+#   slope = 0
+#   pred = 0
+#   intercepts = list()
+#   slopes = list()
+#   seasonals = list()
+#   predictions = list()
+#   deviations = list()
+
+#   def getLastSeasonal(i):
+#     j = i - season_length
+#     if j >= 0:
+#       return seasonals[j]
+#     return 0
+
+#   def getLastDeviation(i):
+#     j = i - season_length
+#     if j >= 0:
+#       return deviations[j]
+#     return 0
+
+#   last_seasonal = 0
+#   last_seasonal_dev = 0
+#   next_last_seasonal = 0
+#   next_pred = None
+
+#   for i,actual in enumerate(series):
+#     if actual is None:
+#       # missing input values break all the math
+#       # do the best we can and move on
+#       intercepts.append(None)
+#       slopes.append(0)
+#       seasonals.append(0)
+#       predictions.append(next_pred)
+#       deviations.append(0)
+#       next_pred = None
+#       continue
+
+#     if i == 0:
+#       last_intercept = actual
+#       last_slope = 0
+#       # seed the first prediction as the first actual
+#       prediction = actual
+#     else:
+#       last_intercept = intercepts[-1]
+#       last_slope = slopes[-1]
+#       if last_intercept is None:
+#         last_intercept = actual
+#       prediction = next_pred
+
+#     last_seasonal = getLastSeasonal(i)
+#     next_last_seasonal = getLastSeasonal(i+1)
+#     last_seasonal_dev = getLastDeviation(i)
+
+#     intercept = holtWintersIntercept(alpha,actual,last_seasonal
+#             ,last_intercept,last_slope)
+#     slope = holtWintersSlope(beta,intercept,last_intercept,last_slope)
+#     seasonal = holtWintersSeasonal(gamma,actual,intercept,last_seasonal)
+#     next_pred = intercept + slope + next_last_seasonal
+#     deviation = holtWintersDeviation(gamma,actual,prediction,last_seasonal_dev)
+
+#     intercepts.append(intercept)
+#     slopes.append(slope)
+#     seasonals.append(seasonal)
+#     predictions.append(prediction)
+#     deviations.append(deviation)
+
+#   # make the new forecast series
+#   forecastName = "holtWintersForecast(%s)" % series.name
+#   forecastSeries = TimeSeries(forecastName, series.start, series.end
+#     , series.step, predictions)
+#   forecastSeries.pathExpression = forecastName
+
+#   # make the new deviation series
+#   deviationName = "holtWintersDeviation(%s)" % series.name
+#   deviationSeries = TimeSeries(deviationName, series.start, series.end
+#           , series.step, deviations)
+#   deviationSeries.pathExpression = deviationName
+
+#   results = { 'predictions': forecastSeries
+#         , 'deviations': deviationSeries
+#         , 'intercepts': intercepts
+#         , 'slopes': slopes
+#         , 'seasonals': seasonals
+#         }
+#   return results
+
+# def holtWintersForecast(requestContext, seriesList):
+#   """
+#   Performs a Holt-Winters forecast using the series as input data. Data from
+#   one week previous to the series is used to bootstrap the initial forecast.
+#   """
+#   previewSeconds = 7 * 86400 # 7 days
+#   # ignore original data and pull new, including our preview
+#   newContext = requestContext.copy()
+#   newContext['startTime'] = requestContext['startTime'] -  timedelta(seconds=previewSeconds)
+#   previewList = evaluateTokens(newContext, requestContext['args'][0])
+#   results = []
+#   for series in previewList:
+#     analysis = holtWintersAnalysis(series)
+#     predictions = analysis['predictions']
+#     windowPoints = previewSeconds / predictions.step
+#     result = TimeSeries("holtWintersForecast(%s)" % series.name, predictions.start + previewSeconds, predictions.end, predictions.step, predictions[windowPoints:])
+#     result.pathExpression = result.name
+#     results.append(result)
+#   return results
+
+# def holtWintersConfidenceBands(requestContext, seriesList, delta=3):
+#   """
+#   Performs a Holt-Winters forecast using the series as input data and plots
+#   upper and lower bands with the predicted forecast deviations.
+#   """
+#   previewSeconds = 7 * 86400 # 7 days
+#   # ignore original data and pull new, including our preview
+#   newContext = requestContext.copy()
+#   newContext['startTime'] = requestContext['startTime'] -  timedelta(seconds=previewSeconds)
+#   previewList = evaluateTokens(newContext, requestContext['args'][0])
+#   results = []
+#   for series in previewList:
+#     analysis = holtWintersAnalysis(series)
+
+#     data = analysis['predictions']
+#     windowPoints = previewSeconds / data.step
+#     forecast = TimeSeries(data.name, data.start + previewSeconds, data.end, data.step, data[windowPoints:])
+#     forecast.pathExpression = data.pathExpression
+
+#     data = analysis['deviations']
+#     windowPoints = previewSeconds / data.step
+#     deviation = TimeSeries(data.name, data.start + previewSeconds, data.end, data.step, data[windowPoints:])
+#     deviation.pathExpression = data.pathExpression
+
+#     seriesLength = len(forecast)
+#     i = 0
+#     upperBand = list()
+#     lowerBand = list()
+#     while i < seriesLength:
+#       forecast_item = forecast[i]
+#       deviation_item = deviation[i]
+#       i = i + 1
+#       if forecast_item is None or deviation_item is None:
+#         upperBand.append(None)
+#         lowerBand.append(None)
+#       else:
+#         scaled_deviation = delta * deviation_item
+#         upperBand.append(forecast_item + scaled_deviation)
+#         lowerBand.append(forecast_item - scaled_deviation)
+
+#     upperName = "holtWintersConfidenceUpper(%s)" % series.name
+#     lowerName = "holtWintersConfidenceLower(%s)" % series.name
+#     upperSeries = TimeSeries(upperName, forecast.start, forecast.end
+#             , forecast.step, upperBand)
+#     lowerSeries = TimeSeries(lowerName, forecast.start, forecast.end
+#             , forecast.step, lowerBand)
+#     upperSeries.pathExpression = series.pathExpression
+#     lowerSeries.pathExpression = series.pathExpression
+#     results.append(lowerSeries)
+#     results.append(upperSeries)
+#   return results
+
+# def holtWintersAberration(requestContext, seriesList, delta=3):
+#   """
+#   Performs a Holt-Winters forecast using the series as input data and plots the
+#   positive or negative deviation of the series data from the forecast.
+#   """
+#   results = []
+#   for series in seriesList:
+#     confidenceBands = holtWintersConfidenceBands(requestContext, [series], delta)
+#     lowerBand = confidenceBands[0]
+#     upperBand = confidenceBands[1]
+#     aberration = list()
+#     for i, actual in enumerate(series):
+#       if series[i] is None:
+#         aberration.append(0)
+#       elif upperBand[i] is not None and series[i] > upperBand[i]:
+#         aberration.append(series[i] - upperBand[i])
+#       elif lowerBand[i] is not None and series[i] < lowerBand[i]:
+#         aberration.append(series[i] - lowerBand[i])
+#       else:
+#         aberration.append(0)
+
+#     newName = "holtWintersAberration(%s)" % series.name
+#     results.append(TimeSeries(newName, series.start, series.end
+#             , series.step, aberration))
+#   return results
+
+def holtWintersConfidenceArea(requestContext, seriesList, delta=3):
+  """
+  Performs a Holt-Winters forecast using the series as input data and plots the
+  area between the upper and lower bands of the predicted forecast deviations.
+  """
+  bands = holtWintersConfidenceBands(requestContext, seriesList, delta)
+  results = areaBetween(requestContext, bands)
+  for series in results:
+    series.name = series.name.replace('areaBetween', 'holtWintersConfidenceArea')
+  return results
+
+##############################################################################
+
+################################## NEW #######################################
+
 def holtWintersIntercept(alpha,actual,last_season,last_intercept,last_slope):
   return alpha * (actual - last_season) \
           + (1 - alpha) * (last_intercept + last_slope)
 
+
 def holtWintersSlope(beta,intercept,last_intercept,last_slope):
   return beta * (intercept - last_intercept) + (1 - beta) * last_slope
 
+
 def holtWintersSeasonal(gamma,actual,intercept,last_season):
   return gamma * (actual - intercept) + (1 - gamma) * last_season
+
 
 def holtWintersDeviation(gamma,actual,prediction,last_seasonal_dev):
   if prediction is None:
     prediction = 0
   return gamma * math.fabs(actual - prediction) + (1 - gamma) * last_seasonal_dev
 
-def holtWintersAnalysis(series):
+
+def holtWintersAnalysis(series, seasonality='1d'):
   alpha = gamma = 0.1
   beta = 0.0035
   # season is currently one day
-  season_length = (24*60*60) / series.step
+  seasonality_time = parseTimeOffset(seasonality)
+  season_length = (seasonality_time.seconds + (seasonality_time.days * 86400)) // series.step
   intercept = 0
   slope = 0
-  pred = 0
   intercepts = list()
   slopes = list()
   seasonals = list()
@@ -2910,14 +3136,12 @@ def holtWintersAnalysis(series):
   # make the new forecast series
   forecastName = "holtWintersForecast(%s)" % series.name
   forecastSeries = TimeSeries(forecastName, series.start, series.end
-    , series.step, predictions)
-  forecastSeries.pathExpression = forecastName
+    , series.step, predictions, xFilesFactor=series.xFilesFactor)
 
   # make the new deviation series
   deviationName = "holtWintersDeviation(%s)" % series.name
   deviationSeries = TimeSeries(deviationName, series.start, series.end
-          , series.step, deviations)
-  deviationSeries.pathExpression = deviationName
+          , series.step, deviations, xFilesFactor=series.xFilesFactor)
 
   results = { 'predictions': forecastSeries
         , 'deviations': deviationSeries
@@ -2927,48 +3151,55 @@ def holtWintersAnalysis(series):
         }
   return results
 
-def holtWintersForecast(requestContext, seriesList):
+
+def holtWintersForecast(requestContext, seriesList, bootstrapInterval='7d', seasonality='1d'):
   """
   Performs a Holt-Winters forecast using the series as input data. Data from
-  one week previous to the series is used to bootstrap the initial forecast.
+  `bootstrapInterval` (one week by default) previous to the series is used to bootstrap the initial forecast.
   """
-  previewSeconds = 7 * 86400 # 7 days
+  bootstrap = parseTimeOffset(bootstrapInterval)
+  previewSeconds = bootstrap.seconds + (bootstrap.days * 86400)
+
   # ignore original data and pull new, including our preview
   newContext = requestContext.copy()
   newContext['startTime'] = requestContext['startTime'] -  timedelta(seconds=previewSeconds)
-  previewList = evaluateTokens(newContext, requestContext['args'][0])
+  previewList = evaluateTarget(newContext, requestContext['args'][0])
   results = []
   for series in previewList:
-    analysis = holtWintersAnalysis(series)
+    analysis = holtWintersAnalysis(series, seasonality)
     predictions = analysis['predictions']
-    windowPoints = previewSeconds / predictions.step
-    result = TimeSeries("holtWintersForecast(%s)" % series.name, predictions.start + previewSeconds, predictions.end, predictions.step, predictions[windowPoints:])
-    result.pathExpression = result.name
+    windowPoints = previewSeconds // predictions.step
+    forecastName = "holtWintersForecast(%s)" % series.name
+    result = TimeSeries(forecastName, predictions.start + previewSeconds, predictions.end,
+                        predictions.step, predictions[windowPoints:],
+                        xFilesFactor=series.xFilesFactor)
     results.append(result)
   return results
 
-def holtWintersConfidenceBands(requestContext, seriesList, delta=3):
+
+def holtWintersConfidenceBands(requestContext, seriesList, delta=3, bootstrapInterval='7d', seasonality='1d'):
   """
   Performs a Holt-Winters forecast using the series as input data and plots
   upper and lower bands with the predicted forecast deviations.
   """
-  previewSeconds = 7 * 86400 # 7 days
+  bootstrap = parseTimeOffset(bootstrapInterval)
+  previewSeconds = bootstrap.seconds + (bootstrap.days * 86400)
+
   # ignore original data and pull new, including our preview
   newContext = requestContext.copy()
   newContext['startTime'] = requestContext['startTime'] -  timedelta(seconds=previewSeconds)
-  previewList = evaluateTokens(newContext, requestContext['args'][0])
+  previewList = evaluateTarget(newContext, requestContext['args'][0])
   results = []
   for series in previewList:
-    analysis = holtWintersAnalysis(series)
-
+    analysis = holtWintersAnalysis(series, seasonality)
     data = analysis['predictions']
-    windowPoints = previewSeconds / data.step
-    forecast = TimeSeries(data.name, data.start + previewSeconds, data.end, data.step, data[windowPoints:])
+    windowPoints = previewSeconds // data.step
+    forecast = TimeSeries(data.name, data.start + previewSeconds, data.end, data.step, data[windowPoints:], xFilesFactor=series.xFilesFactor)
     forecast.pathExpression = data.pathExpression
 
     data = analysis['deviations']
-    windowPoints = previewSeconds / data.step
-    deviation = TimeSeries(data.name, data.start + previewSeconds, data.end, data.step, data[windowPoints:])
+    windowPoints = previewSeconds // data.step
+    deviation = TimeSeries(data.name, data.start + previewSeconds, data.end, data.step, data[windowPoints:], xFilesFactor=series.xFilesFactor)
     deviation.pathExpression = data.pathExpression
 
     seriesLength = len(forecast)
@@ -2988,27 +3219,32 @@ def holtWintersConfidenceBands(requestContext, seriesList, delta=3):
         lowerBand.append(forecast_item - scaled_deviation)
 
     upperName = "holtWintersConfidenceUpper(%s)" % series.name
+
     lowerName = "holtWintersConfidenceLower(%s)" % series.name
+
     upperSeries = TimeSeries(upperName, forecast.start, forecast.end
-            , forecast.step, upperBand)
+            , forecast.step, upperBand, xFilesFactor=series.xFilesFactor)
     lowerSeries = TimeSeries(lowerName, forecast.start, forecast.end
-            , forecast.step, lowerBand)
+            , forecast.step, lowerBand, xFilesFactor=series.xFilesFactor)
     upperSeries.pathExpression = series.pathExpression
     lowerSeries.pathExpression = series.pathExpression
     results.append(lowerSeries)
     results.append(upperSeries)
   return results
 
-def holtWintersAberration(requestContext, seriesList, delta=3):
+
+def holtWintersAberration(requestContext, seriesList, delta=3, bootstrapInterval='7d', seasonality='1d'):
   """
   Performs a Holt-Winters forecast using the series as input data and plots the
   positive or negative deviation of the series data from the forecast.
   """
   results = []
+  confidenceBands = holtWintersConfidenceBands(requestContext, seriesList, delta, bootstrapInterval, seasonality)
+  confidenceBands = {s.name: s for s in confidenceBands}
+
   for series in seriesList:
-    confidenceBands = holtWintersConfidenceBands(requestContext, [series], delta)
-    lowerBand = confidenceBands[0]
-    upperBand = confidenceBands[1]
+    lowerBand = confidenceBands['holtWintersConfidenceLower(%s)' % series.name]
+    upperBand = confidenceBands['holtWintersConfidenceUpper(%s)' % series.name]
     aberration = list()
     for i, actual in enumerate(series):
       if series[i] is None:
@@ -3022,19 +3258,23 @@ def holtWintersAberration(requestContext, seriesList, delta=3):
 
     newName = "holtWintersAberration(%s)" % series.name
     results.append(TimeSeries(newName, series.start, series.end
-            , series.step, aberration))
+            , series.step, aberration, xFilesFactor=series.xFilesFactor))
   return results
 
-def holtWintersConfidenceArea(requestContext, seriesList, delta=3):
+
+def holtWintersConfidenceArea(requestContext, seriesList, delta=3, bootstrapInterval='7d', seasonality='1d'):
   """
   Performs a Holt-Winters forecast using the series as input data and plots the
   area between the upper and lower bands of the predicted forecast deviations.
   """
-  bands = holtWintersConfidenceBands(requestContext, seriesList, delta)
+  bands = holtWintersConfidenceBands(requestContext, seriesList, delta, bootstrapInterval, seasonality)
   results = areaBetween(requestContext, bands)
   for series in results:
     series.name = series.name.replace('areaBetween', 'holtWintersConfidenceArea')
+    series.pathExpression = series.name
   return results
+
+##############################################################################
 
 def linearRegressionAnalysis(series):
   """
