@@ -129,6 +129,8 @@ class FindRequest(object):
     for node_info in results:
       # handle both 1.x and 0.9.x output
       path = node_info.get('path') or node_info.get('metric_path')
+      if path is None:
+        continue
       is_leaf = node_info.get('is_leaf') or node_info.get('isLeaf')
       intervals = node_info.get('intervals') or []
       if not isinstance(intervals, IntervalSet):
