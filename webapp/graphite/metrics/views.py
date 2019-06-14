@@ -168,7 +168,7 @@ def find_view(request):
     results = []
     found = set()
     for node in matches:
-      unique_key = "{name}|{is_leaf}".format(name=node.name, is_leaf=node.is_leaf)
+      unique_key = "{path}|{name}|{is_leaf}".format(path=node.path, name=node.name, is_leaf=node.is_leaf)
       if unique_key in found:
         continue
       found.add(unique_key)
