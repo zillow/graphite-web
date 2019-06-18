@@ -265,7 +265,6 @@ class MetricsTester(TestCase):
         content = self._find_view_basics(request)
         data = json.loads(content)
         data['metrics'] = sorted(data['metrics'])
-        #import pdb; pdb.set_trace()
         self.assertEqual(data, {u'metrics': [{u'name': u'*'}, {u'is_leaf': u'1', u'path': u'hosts.worker1.cpu', u'name': u'cpu'}, {u'is_leaf': u'1', u'path': u'hosts.worker2.cpu', u'name': u'cpu'}]})
 
         # Test from/until params
@@ -394,7 +393,6 @@ class MetricsTester(TestCase):
         request['query']='*'
         content = self._find_view_basics(request)
         data = json.loads(content.split("(")[1].strip(")"))
-        #import pdb; pdb.set_trace()
         self.assertEqual(data, [{u'path': u'hosts', u'is_leaf': False}])
 
         # leaf
