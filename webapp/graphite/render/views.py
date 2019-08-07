@@ -48,6 +48,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.conf import settings
 from django.utils.cache import add_never_cache_headers, patch_response_headers
 
+EXPENSIVE_QUERY_THRESHOLD_IN_SECONDS = 30
 
 def renderView(request):
   start = time()
@@ -149,6 +150,7 @@ def renderView(request):
           timestamp = datetime.fromtimestamp(series.start + (i * series.step), requestOptions['tzinfo'])
           writer.writerow((series.name, timestamp.strftime("%Y-%m-%d %H:%M:%S"), value))
 
+      log_expensive_request(start, request)
       return response
 
     if format == 'json':
@@ -211,6 +213,7 @@ def renderView(request):
         add_never_cache_headers(response)
       log.rendering('JSON rendering time %6f' % (time() - jsonStart))
       log.rendering('Total request processing time %6f' % (time() - start))
+      log_expensive_request(start, request)
       return response
 
     if format == 'dygraph':
@@ -241,6 +244,7 @@ def renderView(request):
       else:
         add_never_cache_headers(response)
       log.rendering('Total dygraph rendering time %.6f' % (time() - start))
+      log_expensive_request(start, request)
       return response
 
     if format == 'rickshaw':
@@ -263,6 +267,7 @@ def renderView(request):
       else:
         add_never_cache_headers(response)
       log.rendering('Total rickshaw rendering time %.6f' % (time() - start))
+      log_expensive_request(start, request)
       return response
 
     if format == 'raw':
@@ -273,6 +278,7 @@ def renderView(request):
         response.write('\n')
 
       log.rendering('Total rawData rendering time %.6f' % (time() - start))
+      log_expensive_request(start, request)
       return response
 
     if format == 'svg':
@@ -286,6 +292,7 @@ def renderView(request):
       pickle.dump(seriesInfo, response, protocol=-1)
 
       log.rendering('Total pickle rendering time %.6f' % (time() - start))
+      log_expensive_request(start, request)
       return response
 
     # this format is designed for replacing pickle format
@@ -295,6 +302,7 @@ def renderView(request):
       response = HttpResponse(
           content=output,
           content_type='application/json')
+      log_expensive_request(start, request)
       return response
 
 
@@ -322,6 +330,7 @@ def renderView(request):
     add_never_cache_headers(response)
 
   log.rendering('Total rendering time %.6f seconds' % (time() - start))
+  log_expensive_request(start, request)
   return response
 
 
@@ -572,3 +581,8 @@ def errorPage(message):
   template = loader.get_template('500.html')
   context = Context(dict(message=message))
   return HttpResponseServerError( template.render(context) )
+
+def log_expensive_request(start, request):
+  time_to_process_request = time() - start
+  if time_to_process_request > EXPENSIVE_QUERY_THRESHOLD_IN_SECONDS:
+    log.warn("expensive request: %s, took: %.6f seconds" % (str(request.GET.copy()), time_to_process_request))

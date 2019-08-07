@@ -16,7 +16,7 @@ class TestLogger(unittest.TestCase):
     def test_init(self):
         """ Tesing initialization. """
         for logger in ['infoLogger', 'exceptionLogger', 'cacheLogger',
-                       'renderingLogger']:
+                       'renderingLogger', 'warnLogger']:
             self.assertTrue(hasattr(log, logger))
 
     def test_config_logger(self):
@@ -48,6 +48,14 @@ class TestLogger(unittest.TestCase):
         self.assertTrue(isinstance(log.infoLogger.handlers[0], FileHandler))
         self.assertTrue(isinstance(log.exceptionLogger.handlers[0], FileHandler))
         settings.LOG_ROTATION = old_val
+
+    def test_warn_log(self):
+        """ Testing writing to a log file. """
+        message = 'Test Warn Message'
+        log.warn(message)
+        lines = [l for l in open(os.path.join(settings.LOG_DIR,
+                 'warn.log')).readlines()]
+        self.assertEqual(message, lines[-1].split('::')[1].strip())
 
     def tearDown(self):
         get_pool().close()

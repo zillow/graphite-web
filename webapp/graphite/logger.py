@@ -55,6 +55,12 @@ class GraphiteLogger:
                                                level=logging.INFO,
                                                )
 
+    self.warnLogger = self._config_logger('warn.log',
+                                          'warn',
+                                          True,
+                                          level=logging.WARN,
+                                          )
+
   @staticmethod
   def _config_logger(log_file_name, name, activate,
                      level=None, when='midnight', backupCount=settings.LOG_ROTATION_COUNT):
@@ -89,5 +95,7 @@ class GraphiteLogger:
     # return self.renderingLogger.log(30,msg,*args,**kwargs)
     return
 
+  def warn(self,msg,*args,**kwargs):
+    return self.warnLogger.warn(msg,**kwargs)
 
 log = GraphiteLogger() # import-shared logger instance
