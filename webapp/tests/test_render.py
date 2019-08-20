@@ -3,17 +3,21 @@ import json
 import os
 import time
 import math
+import mock
 import logging
 import shutil
 
-from graphite.render.hashing import ConsistentHashRing, hashRequest, hashData
-from graphite.render.evaluator import extractPathExpressions
 import whisper
 
 from django.conf import settings
 from django.core.urlresolvers import reverse
 from django.http import HttpRequest, QueryDict
 from .base import TestCase
+
+
+from graphite.render.hashing import ConsistentHashRing, hashRequest, hashData
+from graphite.render.evaluator import extractPathExpressions
+from graphite.render.datalib import TimeSeries
 
 # Silence logging during tests
 LOGGER = logging.getLogger()
@@ -323,6 +327,88 @@ class RenderTest(TestCase):
         self.assertEqual(data['target'], '12')
         self.assertEqual(data['input_target'], 'constantLine(12)')
 
+    def fetchData(a, b):
+        return [TimeSeries('abc.pqr', 1, 4, 1, [1, 2, 3, 4])]
+
+    @mock.patch('graphite.render.evaluator.fetchData', fetchData)
+    def test_render_input_target_for_invalid_user_input(self):
+        graphite_target = 'movingAverage(abc.pqr, 15min)'
+        url = reverse('graphite.render.views.renderView')
+        response = self.client.get(url, {
+                 'target': graphite_target,
+                 'format': 'json',
+                 'from': '07:01_20140226',
+                 'until': '08:01_20140226',
+        })
+        assert response.status_code == 400
+        data = json.loads(response.content)
+        self.assertEqual(
+            data['message'],
+            "Invalid target: {}. Error: int() argument must be a string or a number, not 'list'.".format(
+                graphite_target
+            )
+        )
+
+    @mock.patch('graphite.render.evaluator.fetchData', fetchData)
+    def test_render_input_target_for_non_existing_function(self):
+        graphite_target = 'nonExistingFunction(abc.pqr, 15min)'
+        url = reverse('graphite.render.views.renderView')
+        response = self.client.get(url, {
+                 'target': graphite_target,
+                 'format': 'json',
+                 'from': '07:01_20140226',
+                 'until': '08:01_20140226',
+        })
+        assert response.status_code == 400
+        data = json.loads(response.content)
+        self.assertEqual(
+            data['message'],
+            'Invalid target: {}. Error: "Unknown graphite function u\'nonExistingFunction\'".'.format(
+                graphite_target
+            )
+        )
+
+    @mock.patch('graphite.render.evaluator.fetchData', fetchData)
+    def test_render_input_target_for_invalid_from_format(self):
+        graphite_target = 'nonExistingFunction(abc.pqr, 15min)'
+        url = reverse('graphite.render.views.renderView')
+        response = self.client.get(url, {
+                 'target': graphite_target,
+                 'format': 'json',
+                 'from': 'a',
+                 'until': '08:01_20140226',
+        })
+        assert response.status_code == 400
+        data = json.loads(response.content)
+        self.assertEqual(data['message'], "Invalid request options. Error: Unknown day reference.")
+
+    @mock.patch('graphite.render.evaluator.fetchData', fetchData)
+    def test_render_input_target_for_invalid_until_format(self):
+        graphite_target = 'nonExistingFunction(abc.pqr, 15min)'
+        url = reverse('graphite.render.views.renderView')
+        response = self.client.get(url, {
+                 'target': graphite_target,
+                 'format': 'json',
+                 'from': '08:01_20140226',
+                 'until': 'b',
+        })
+        assert response.status_code == 400
+        data = json.loads(response.content)
+        self.assertEqual(data['message'], "Invalid request options. Error: Unknown day reference.")
+
+    @mock.patch('graphite.render.evaluator.fetchData', fetchData)
+    def test_render_input_target_for_invalid_offset_unit(self):
+        graphite_target = 'nonExistingFunction(abc.pqr, 15min)'
+        url = reverse('graphite.render.views.renderView')
+        response = self.client.get(url, {
+                 'target': graphite_target,
+                 'format': 'json',
+                 'from': '08:01_20140226',
+                 'until': '-3m',
+        })
+        assert response.status_code == 400
+        data = json.loads(response.content)
+        self.assertEqual(data['message'], "Invalid request options. Error: Invalid offset unit 'm'.")
 
     def test_template_pathExpression_variables(self):
         self.create_whisper_hosts()

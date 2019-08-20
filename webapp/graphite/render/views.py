@@ -30,6 +30,7 @@ except ImportError:
   import pickle
 
 from graphite.compat import HttpResponse
+from graphite.exceptions.invalid_input_error import InvalidInputError
 from graphite.user_util import getProfileByUsername
 from graphite.util import json, unpickle
 from graphite.remote_storage import extractForwardHeaders, prefetchRemoteData
@@ -51,7 +52,15 @@ from django.utils.cache import add_never_cache_headers, patch_response_headers
 
 def renderView(request):
   start = time()
-  (graphOptions, requestOptions) = parseOptions(request)
+
+  try:
+    (graphOptions, requestOptions) = parseOptions(request)
+  except InvalidInputError as err:
+    error_message = "Invalid request options. Error: {}.".format(err)
+    log.exception(error_message)
+    return HttpResponse(
+    content=json.dumps({"message": error_message}), content_type='application/json', status=400)
+
   useCache = 'noCache' not in requestOptions
   cacheTimeout = requestOptions['cacheTimeout']
   requestContext = {
@@ -89,7 +98,13 @@ def renderView(request):
           raise ValueError("Invalid target '%s'" % target)
         data.append( (name,value) )
       else:
-        seriesList = evaluateTarget(requestContext, target)
+        try:
+            seriesList = evaluateTarget(requestContext, target)
+        except InvalidInputError as err:
+          return HttpResponse(
+            content=json.dumps({
+              "message": "Invalid target: {}. {}.".format(target, err)
+            }), content_type='application/json', status=400)
 
         for series in seriesList:
           func = PieFunctions[requestOptions['pieMode']]
@@ -125,7 +140,13 @@ def renderView(request):
         if not target.strip():
           continue
         t = time()
-        seriesList = evaluateTarget(requestContext, target)
+        try:
+            seriesList = evaluateTarget(requestContext, target)
+        except InvalidInputError as err:
+          return HttpResponse(
+            content=json.dumps({
+              "message": "Invalid target: {}. {}.".format(target, err)
+            }), content_type='application/json', status=400)
         log.rendering("Retrieval of %s took %.6f" % (target, time() - t))
         data.extend(seriesList)
 

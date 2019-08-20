@@ -32,14 +32,16 @@ class MetricPathTest(TestCase):
     def test_get_real_metric_path(self):
         real_wsp_file = os.path.join(self.tmp, "real.wsp")
         fake_wsp_file = os.path.join(self.tmp_2, "fake.wsp")
-        relative_wsp_path = "fake.wsp"
+        relative_wsp_path = "real.wsp"
         with open(real_wsp_file, "w+") as fh:
             fh.write("")
-        os.symlink(fake_wsp_file, fake_wsp_file)
+        os.symlink(real_wsp_file, relative_wsp_path)
         assert get_real_metric_path(real_wsp_file, relative_wsp_path) == "real"
 
     def tearDown(self):
         shutil.rmtree(self.tmp)
+        shutil.rmtree(self.tmp_2)
+        os.remove("real.wsp")
 
 
 class FinderTest(TestCase):

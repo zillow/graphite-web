@@ -1,17 +1,24 @@
 import re
+from graphite.logger import log
 from graphite.render.grammar import grammar
 from graphite.render.datalib import fetchData, TimeSeries
+from graphite.exceptions.invalid_input_error import InvalidInputError
 
 
 def evaluateTarget(requestContext, target):
-  tokens = grammar.parseString(target)
-  result = evaluateTokens(requestContext, tokens)
+  try:
+    tokens = grammar.parseString(target)
+    result = evaluateTokens(requestContext, tokens)
 
-  if type(result) is TimeSeries:
-    return [result] #we have to return a list of TimeSeries objects
+    if type(result) is TimeSeries:
+        return [result] #we have to return a list of TimeSeries objects
 
-  else:
-    return result
+    else:
+        return result
+  except (TypeError, ValueError, KeyError, InvalidInputError) as err:
+    error_message = "Error: {}".format(err)
+    log.exception(error_message)
+    raise InvalidInputError(error_message)
 
 
 def evaluateTokens(requestContext, tokens, replacements=None):
@@ -50,15 +57,20 @@ def evaluateTokens(requestContext, tokens, replacements=None):
       # as tokens.template. this generally happens if you try to pass non-numeric/string args
       raise ValueError("invalid template() syntax, only string/numeric arguments are allowed")
 
-    func = SeriesFunctions[tokens.call.funcname]
+    try:
+        func = SeriesFunctions[tokens.call.funcname]
+    except KeyError as err:
+        error_message = "Unknown graphite function {}".format(err)
+        log.exception(error_message)
+        raise KeyError(error_message)
     args = [evaluateTokens(requestContext, arg, replacements) for arg in tokens.call.args]
     requestContext['args'] = tokens.call.args
     kwargs = dict([(kwarg.argname, evaluateTokens(requestContext, kwarg.args[0], replacements))
-                   for kwarg in tokens.call.kwargs])
+                for kwarg in tokens.call.kwargs])
     try:
-      return func(requestContext, *args, **kwargs)
+        return func(requestContext, *args, **kwargs)
     except NormalizeEmptyResultError:
-      return []
+        return []
 
   elif tokens.number:
     if tokens.number.integer:
