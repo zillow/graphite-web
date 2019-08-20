@@ -14,7 +14,6 @@ from django.core.urlresolvers import reverse
 from django.http import HttpRequest, QueryDict
 from .base import TestCase
 
-
 from graphite.render.hashing import ConsistentHashRing, hashRequest, hashData
 from graphite.render.evaluator import extractPathExpressions
 from graphite.render.datalib import TimeSeries

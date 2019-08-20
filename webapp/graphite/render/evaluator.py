@@ -1,4 +1,5 @@
 import re
+import sys
 from graphite.logger import log
 from graphite.render.grammar import grammar
 from graphite.render.datalib import fetchData, TimeSeries
@@ -11,14 +12,12 @@ def evaluateTarget(requestContext, target):
     result = evaluateTokens(requestContext, tokens)
 
     if type(result) is TimeSeries:
-        return [result] #we have to return a list of TimeSeries objects
+      return [result] #we have to return a list of TimeSeries objects
 
     else:
-        return result
+      return result
   except (TypeError, ValueError, KeyError, InvalidInputError) as err:
-    error_message = "Error: {}".format(err)
-    log.exception(error_message)
-    raise InvalidInputError(error_message)
+    raise InvalidInputError("Error: {}".format(err))
 
 
 def evaluateTokens(requestContext, tokens, replacements=None):
@@ -58,19 +57,19 @@ def evaluateTokens(requestContext, tokens, replacements=None):
       raise ValueError("invalid template() syntax, only string/numeric arguments are allowed")
 
     try:
-        func = SeriesFunctions[tokens.call.funcname]
+      func = SeriesFunctions[tokens.call.funcname]
     except KeyError as err:
-        error_message = "Unknown graphite function {}".format(err)
-        log.exception(error_message)
-        raise KeyError(error_message)
+      error_type, error_instance, traceback = sys.exc_info()
+      error_instance.args = ("Unknown graphite function {}".format(err),)
+      raise error_type, error_instance, traceback
     args = [evaluateTokens(requestContext, arg, replacements) for arg in tokens.call.args]
     requestContext['args'] = tokens.call.args
     kwargs = dict([(kwarg.argname, evaluateTokens(requestContext, kwarg.args[0], replacements))
                 for kwarg in tokens.call.kwargs])
     try:
-        return func(requestContext, *args, **kwargs)
+      return func(requestContext, *args, **kwargs)
     except NormalizeEmptyResultError:
-        return []
+      return []
 
   elif tokens.number:
     if tokens.number.integer:

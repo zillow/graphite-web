@@ -52,14 +52,10 @@ from django.utils.cache import add_never_cache_headers, patch_response_headers
 
 def renderView(request):
   start = time()
-
   try:
     (graphOptions, requestOptions) = parseOptions(request)
   except InvalidInputError as err:
-    error_message = "Invalid request options. Error: {}.".format(err)
-    log.exception(error_message)
-    return HttpResponse(
-    content=json.dumps({"message": error_message}), content_type='application/json', status=400)
+    return log_and_generate_http_client_error_response("Invalid request options. Error: {}.".format(err))
 
   useCache = 'noCache' not in requestOptions
   cacheTimeout = requestOptions['cacheTimeout']
@@ -101,10 +97,8 @@ def renderView(request):
         try:
             seriesList = evaluateTarget(requestContext, target)
         except InvalidInputError as err:
-          return HttpResponse(
-            content=json.dumps({
-              "message": "Invalid target: {}. {}.".format(target, err)
-            }), content_type='application/json', status=400)
+          return log_and_generate_http_client_error_response(
+            "Invalid target: {}. {}.".format(target, err))
 
         for series in seriesList:
           func = PieFunctions[requestOptions['pieMode']]
@@ -143,10 +137,7 @@ def renderView(request):
         try:
             seriesList = evaluateTarget(requestContext, target)
         except InvalidInputError as err:
-          return HttpResponse(
-            content=json.dumps({
-              "message": "Invalid target: {}. {}.".format(target, err)
-            }), content_type='application/json', status=400)
+          return log_and_generate_http_client_error_response("Invalid target: {}. {}.".format(target, err))
         log.rendering("Retrieval of %s took %.6f" % (target, time() - t))
         data.extend(seriesList)
 
@@ -463,6 +454,12 @@ def parseOptions(request):
 
 
 connectionPools = {}
+
+
+def log_and_generate_http_client_error_response(error_message):
+    log.exception(error_message)
+    return HttpResponse(
+    content=json.dumps({"message": error_message}), content_type='application/json', status=400)
 
 
 def connector_class_selector(https_support=False):
