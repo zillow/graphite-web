@@ -369,7 +369,7 @@ class RenderTest(TestCase):
 
     @mock.patch('graphite.render.evaluator.fetchData', fetchData)
     def test_render_input_target_for_invalid_from_format(self):
-        graphite_target = 'nonExistingFunction(abc.pqr, 15min)'
+        graphite_target = 'movingAverage(abc.pqr, 15min)'
         url = reverse('graphite.render.views.renderView')
         response = self.client.get(url, {
                  'target': graphite_target,
@@ -383,7 +383,7 @@ class RenderTest(TestCase):
 
     @mock.patch('graphite.render.evaluator.fetchData', fetchData)
     def test_render_input_target_for_invalid_until_format(self):
-        graphite_target = 'nonExistingFunction(abc.pqr, 15min)'
+        graphite_target = 'movingAverage(abc.pqr, 15min)'
         url = reverse('graphite.render.views.renderView')
         response = self.client.get(url, {
                  'target': graphite_target,
@@ -397,7 +397,7 @@ class RenderTest(TestCase):
 
     @mock.patch('graphite.render.evaluator.fetchData', fetchData)
     def test_render_input_target_for_invalid_offset_unit(self):
-        graphite_target = 'nonExistingFunction(abc.pqr, 15min)'
+        graphite_target = 'movingAverage(abc.pqr, 15min)'
         url = reverse('graphite.render.views.renderView')
         response = self.client.get(url, {
                  'target': graphite_target,

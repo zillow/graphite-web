@@ -16,7 +16,7 @@ def evaluateTarget(requestContext, target):
 
     else:
       return result
-  except (TypeError, ValueError, KeyError, InvalidInputError) as err:
+  except (TypeError, ValueError, KeyError) as err:
     raise InvalidInputError("Error: {}".format(err))
 
 
@@ -65,7 +65,7 @@ def evaluateTokens(requestContext, tokens, replacements=None):
     args = [evaluateTokens(requestContext, arg, replacements) for arg in tokens.call.args]
     requestContext['args'] = tokens.call.args
     kwargs = dict([(kwarg.argname, evaluateTokens(requestContext, kwarg.args[0], replacements))
-                for kwarg in tokens.call.kwargs])
+              for kwarg in tokens.call.kwargs])
     try:
       return func(requestContext, *args, **kwargs)
     except NormalizeEmptyResultError:

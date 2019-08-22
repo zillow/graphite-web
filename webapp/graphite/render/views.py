@@ -457,7 +457,7 @@ connectionPools = {}
 
 
 def log_and_generate_http_client_error_response(error_message):
-    log.exception(error_message)
+    log.warning(error_message)
     return HttpResponse(
     content=json.dumps({"message": error_message}), content_type='application/json', status=400)
 

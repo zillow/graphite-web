@@ -39,6 +39,11 @@ class GraphiteLogger:
                                           settings.LOG_INFO,
                                           level = logging.INFO,
                                           )
+    self.warningLogger = self._config_logger('warning.log',
+                                               'warning',
+                                               True,
+                                               level=logging.WARNING,
+                                               )
     self.exceptionLogger = self._config_logger('exception.log',
                                                'exception',
                                                True,
@@ -77,6 +82,9 @@ class GraphiteLogger:
   def info(self,msg,*args,**kwargs):
     # return self.infoLogger.info(msg,*args,**kwargs)
     return
+
+  def warning(self,msg="Warning",**kwargs):
+    return self.warningLogger.warning(msg, **kwargs)
 
   def exception(self,msg="Exception Caught",**kwargs):
     return self.exceptionLogger.exception(msg,**kwargs)
