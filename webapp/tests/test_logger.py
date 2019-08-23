@@ -30,6 +30,14 @@ class TestLogger(unittest.TestCase):
                  'info.log')).readlines()]
         self.assertEqual(message, lines[-1].split('::')[1].strip())
 
+    def test_warning_log(self):
+        """ Testing writing to a log file. """
+        message = 'Test Warning Message'
+        log.warning(message)
+        lines = [l for l in open(os.path.join(settings.LOG_DIR,
+                 'warning.log')).readlines()]
+        self.assertEqual(message, lines[-1].split('::')[1].strip())
+
     def test_rotate(self):
         """ Force rotation of the log file. """
         handler = log.infoLogger.handlers[0]

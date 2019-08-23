@@ -14,8 +14,10 @@ limitations under the License."""
 
 import pytz
 from datetime import datetime,timedelta
-from time import daylight
 from django.conf import settings
+from time import daylight
+
+from graphite.exceptions.invalid_input_error import InvalidInputError
 
 months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
 weekdays = ['sun','mon','tue','wed','thu','fri','sat']
@@ -105,7 +107,7 @@ def parseTimeReference(ref):
     elif ref[-1:].isdigit():
       refDate = refDate.replace(day= int(ref[-1:]))
     else:
-      raise Exception("Day of month required after month name")
+      raise InvalidInputError("Day of month required after month name")
   elif ref[:3] in weekdays: #DayOfWeek (Monday, etc)
     todayDayName = refDate.strftime("%a").lower()[:3]
     today = weekdays.index( todayDayName )
@@ -114,7 +116,7 @@ def parseTimeReference(ref):
     if dayOffset < 0: dayOffset += 7
     refDate -= timedelta(days=dayOffset)
   elif ref:
-    raise Exception("Unknown day reference")
+    raise InvalidInputError("Unknown day reference")
   return refDate
 
 
@@ -159,4 +161,4 @@ def getUnitString(s):
   if s.startswith('w'): return 'weeks'
   if s.startswith('mon'): return 'months'
   if s.startswith('y'): return 'years'
-  raise Exception("Invalid offset unit '%s'" % s)
+  raise InvalidInputError("Invalid offset unit '%s'" % s)
