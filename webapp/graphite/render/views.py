@@ -49,7 +49,6 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.conf import settings
 from django.utils.cache import add_never_cache_headers, patch_response_headers
 
-EXPENSIVE_QUERY_THRESHOLD_IN_SECONDS = 30
 
 def renderView(request):
   start = time()
@@ -79,7 +78,7 @@ def renderView(request):
     cachedResponse = cache.get(requestKey)
     if cachedResponse:
       log.cache('Request-Cache hit [%s]' % requestKey)
-      log.rendering('Returned cached response in %.6f' % (time() - start))
+      log_slow_request(start, request)
       return cachedResponse
     else:
       log.cache('Request-Cache miss [%s]' % requestKey)
@@ -127,7 +126,6 @@ def renderView(request):
     else: # Have to actually retrieve the data now
       targets = requestOptions['targets']
       if settings.REMOTE_PREFETCH_DATA and not requestOptions.get('localOnly'):
-        log.rendering("Prefetching remote data")
         pathExpressions = extractPathExpressions(targets)
         prefetchRemoteData(STORE.remote_stores, requestContext, pathExpressions)
 
@@ -139,7 +137,6 @@ def renderView(request):
             seriesList = evaluateTarget(requestContext, target)
         except InvalidInputError as err:
           return log_and_generate_http_client_error_response("Invalid target: {}. {}.".format(target, err))
-        log.rendering("Retrieval of %s took %.6f" % (target, time() - t))
         data.extend(seriesList)
 
         if type(seriesList) is list:
@@ -162,7 +159,7 @@ def renderView(request):
           timestamp = datetime.fromtimestamp(series.start + (i * series.step), requestOptions['tzinfo'])
           writer.writerow((series.name, timestamp.strftime("%Y-%m-%d %H:%M:%S"), value))
 
-      log_expensive_request(start, request)
+      log_slow_request(start, request)
       return response
 
     if format == 'json':
@@ -223,9 +220,7 @@ def renderView(request):
         patch_response_headers(response, cache_timeout=cacheTimeout)
       else:
         add_never_cache_headers(response)
-      log.rendering('JSON rendering time %6f' % (time() - jsonStart))
-      log.rendering('Total request processing time %6f' % (time() - start))
-      log_expensive_request(start, request)
+      log_slow_request(start, request)
       return response
 
     if format == 'dygraph':
@@ -255,8 +250,7 @@ def renderView(request):
         patch_response_headers(response, cache_timeout=cacheTimeout)
       else:
         add_never_cache_headers(response)
-      log.rendering('Total dygraph rendering time %.6f' % (time() - start))
-      log_expensive_request(start, request)
+      log_slow_request(start, request)
       return response
 
     if format == 'rickshaw':
@@ -278,8 +272,7 @@ def renderView(request):
         patch_response_headers(response, cache_timeout=cacheTimeout)
       else:
         add_never_cache_headers(response)
-      log.rendering('Total rickshaw rendering time %.6f' % (time() - start))
-      log_expensive_request(start, request)
+      log_slow_request(start, request)
       return response
 
     if format == 'raw':
@@ -289,8 +282,7 @@ def renderView(request):
         response.write( ','.join(map(repr,series)) )
         response.write('\n')
 
-      log.rendering('Total rawData rendering time %.6f' % (time() - start))
-      log_expensive_request(start, request)
+      log_slow_request(start, request)
       return response
 
     if format == 'svg':
@@ -303,8 +295,7 @@ def renderView(request):
       seriesInfo = [series.getInfo() for series in data]
       pickle.dump(seriesInfo, response, protocol=-1)
 
-      log.rendering('Total pickle rendering time %.6f' % (time() - start))
-      log_expensive_request(start, request)
+      log_slow_request(start, request)
       return response
 
     # this format is designed for replacing pickle format
@@ -314,7 +305,7 @@ def renderView(request):
       response = HttpResponse(
           content=output,
           content_type='application/json')
-      log_expensive_request(start, request)
+      log_slow_request(start, request)
       return response
 
 
@@ -341,8 +332,7 @@ def renderView(request):
   else:
     add_never_cache_headers(response)
 
-  log.rendering('Total rendering time %.6f seconds' % (time() - start))
-  log_expensive_request(start, request)
+  log_slow_request(start, request)
   return response
 
 
@@ -514,13 +504,10 @@ def delegateRendering(graphType, graphOptions, headers=None):
       assert contentType == 'image/png', "Bad content type: \"%s\" from %s" % (contentType,server)
       assert imageData, "Received empty response from %s" % server
       # Wrap things up
-      log.rendering('Remotely rendered image on %s in %.6f seconds' % (server,time() - start2))
-      log.rendering('Spent a total of %.6f seconds doing remote rendering work' % (time() - start))
       pool.add(connection)
       return imageData
     except:
       log.exception("Exception while attempting remote rendering request on %s" % server)
-      log.rendering('Exception while remotely rendering on %s wasted %.6f' % (server,time() - start2))
       continue
 
 
@@ -534,7 +521,6 @@ def renderLocalView(request):
     graphClass = GraphTypes[graphType]
     options = unpickle.loads(optionsPickle)
     image = doImageRender(graphClass, options)
-    log.rendering("Delegated rendering request took %.6f seconds" % (time() -  start))
     response = buildResponse(image)
     add_never_cache_headers(response)
     return response
@@ -585,7 +571,6 @@ def doImageRender(graphClass, graphOptions):
   t = time()
   img = graphClass(**graphOptions)
   img.output(pngData)
-  log.rendering('Rendered PNG in %.6f seconds' % (time() - t))
   imageData = pngData.getvalue()
   pngData.close()
   return imageData
@@ -600,7 +585,7 @@ def errorPage(message):
   context = Context(dict(message=message))
   return HttpResponseServerError( template.render(context) )
 
-def log_expensive_request(start, request):
+def log_slow_request(start, request):
   time_to_process_request = time() - start
-  if time_to_process_request > EXPENSIVE_QUERY_THRESHOLD_IN_SECONDS:
-    log.warn("expensive request: %s, took: %.6f seconds" % (str(request.GET.copy()), time_to_process_request))
+  if time_to_process_request > settings.SLOW_QUERY_THRESHOLD_IN_SECONDS:
+    log.rendering("slow request: %s, took: %.6f seconds" % (str(request.GET.copy()), time_to_process_request))
