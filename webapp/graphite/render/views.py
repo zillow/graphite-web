@@ -78,7 +78,7 @@ def renderView(request):
     cachedResponse = cache.get(requestKey)
     if cachedResponse:
       log.cache('Request-Cache hit [%s]' % requestKey)
-      log_slow_request(start, request)
+      log_request(start, request)
       return cachedResponse
     else:
       log.cache('Request-Cache miss [%s]' % requestKey)
@@ -159,7 +159,7 @@ def renderView(request):
           timestamp = datetime.fromtimestamp(series.start + (i * series.step), requestOptions['tzinfo'])
           writer.writerow((series.name, timestamp.strftime("%Y-%m-%d %H:%M:%S"), value))
 
-      log_slow_request(start, request)
+      log_request(start, request)
       return response
 
     if format == 'json':
@@ -220,7 +220,7 @@ def renderView(request):
         patch_response_headers(response, cache_timeout=cacheTimeout)
       else:
         add_never_cache_headers(response)
-      log_slow_request(start, request)
+      log_request(start, request)
       return response
 
     if format == 'dygraph':
@@ -250,7 +250,7 @@ def renderView(request):
         patch_response_headers(response, cache_timeout=cacheTimeout)
       else:
         add_never_cache_headers(response)
-      log_slow_request(start, request)
+      log_request(start, request)
       return response
 
     if format == 'rickshaw':
@@ -272,7 +272,7 @@ def renderView(request):
         patch_response_headers(response, cache_timeout=cacheTimeout)
       else:
         add_never_cache_headers(response)
-      log_slow_request(start, request)
+      log_request(start, request)
       return response
 
     if format == 'raw':
@@ -282,7 +282,7 @@ def renderView(request):
         response.write( ','.join(map(repr,series)) )
         response.write('\n')
 
-      log_slow_request(start, request)
+      log_request(start, request)
       return response
 
     if format == 'svg':
@@ -295,7 +295,7 @@ def renderView(request):
       seriesInfo = [series.getInfo() for series in data]
       pickle.dump(seriesInfo, response, protocol=-1)
 
-      log_slow_request(start, request)
+      log_request(start, request)
       return response
 
     # this format is designed for replacing pickle format
@@ -305,7 +305,7 @@ def renderView(request):
       response = HttpResponse(
           content=output,
           content_type='application/json')
-      log_slow_request(start, request)
+      log_request(start, request)
       return response
 
 
@@ -332,7 +332,7 @@ def renderView(request):
   else:
     add_never_cache_headers(response)
 
-  log_slow_request(start, request)
+  log_request(start, request)
   return response
 
 
@@ -585,7 +585,7 @@ def errorPage(message):
   context = Context(dict(message=message))
   return HttpResponseServerError( template.render(context) )
 
-def log_slow_request(start, request):
+def log_request(start, request):
   time_to_process_request = time() - start
   if time_to_process_request > settings.SLOW_QUERY_THRESHOLD_IN_SECONDS:
     log.rendering("slow request: %s, took: %.6f seconds" % (str(request.GET.copy()), time_to_process_request))

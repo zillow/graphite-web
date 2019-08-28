@@ -13,7 +13,7 @@ from django.conf import settings
 from django.core.urlresolvers import reverse
 from django.http import HttpRequest, QueryDict
 from .base import TestCase
-from graphite.render.views import log_slow_request
+from graphite.render.views import log_request
 
 from graphite.render.hashing import ConsistentHashRing, hashRequest, hashData
 from graphite.render.evaluator import extractPathExpressions
@@ -441,7 +441,7 @@ class RenderTest(TestCase):
         self.assertEqual(data['target'], 'sumSeries(hosts.worker*.cpu)')
         self.assertEqual(data['input_target'], 'template(sumSeries(hosts.$hostname.cpu))')
 
-    def test_log_slow_request(self):
+    def test_log_request(self):
         target_qd = QueryDict('&target=randomWalk(%27random%20walk%27)'
                        '&target=randomWalk(%27random%20walk2%27)'
                        '&target=randomWalk(%27random%20walk3%27)')
@@ -449,7 +449,7 @@ class RenderTest(TestCase):
         get_request.GET = target_qd.copy()
         message = "slow request"
         
-        log_slow_request(time.time()-(settings.SLOW_QUERY_THRESHOLD_IN_SECONDS+1), get_request)
+        log_request(time.time()-(settings.SLOW_QUERY_THRESHOLD_IN_SECONDS+1), get_request)
         lines = [l for l in open(os.path.join(settings.LOG_DIR,
                  'rendering.log')).readlines()]
         self.assertTrue(message in lines[-1].split('::')[1].strip())
